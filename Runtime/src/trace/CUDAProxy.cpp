@@ -51,7 +51,7 @@ namespace mlinsight {
         instance->shouldHookThisSymbol(symbol, bind, type, retSymbolHookHint);
         //INFO_LOGS("cuGetProcAddress hooking %s (%d)", symbol, retSymbolHookHint.shouldHook);
         if(retSymbolHookHint.realAddressPtr){
-                *(retSymbolHookHint.realAddressPtr)=*pfn;
+            *(retSymbolHookHint.realAddressPtr)=*pfn;
         }
 
         if (retSymbolHookHint.shouldHook) {
@@ -61,10 +61,12 @@ namespace mlinsight {
             }
             void *retAddr = nullptr;
             if (!instance->installDlSym(*pfn, retAddr)) {
+                INFO_LOGS("CUDA API NOT hooked: name:%s bind:%zd type:%zd addr:%p",symbol,bind,type,*pfn);
                 ERR_LOGS("Failed to hook %s because of installation failure", symbol);
             } else {
                 //INFO_LOGS("Install the hook on %s", symbol);
                 *pfn = retAddr;
+                //INFO_LOGS("CUDA API hooked: name:%s bind:%zd type:%zd addr:%p",symbol,bind,type,*pfn);
             }
         }
 
@@ -84,6 +86,7 @@ namespace mlinsight {
     cudaError_t cudaMalloc_proxy ( void** devPtr, size_t size ) {
         cout << "cudaMalloc intercepted size:" << size << endl;
         cudaCount++;
+        //print_stacktrace();
 
 #if 0
         if(cudaCount == 80) {
@@ -99,6 +102,19 @@ namespace mlinsight {
 
         return ret; 
     }
+
+    cudaError_t cudaMallocAsync_proxy(void **devPtr, size_t size, cudaStream_t hStream){
+        cout << "cudaMallocAsync intercepted size:" << size << endl;
+        cudaCount++;
+
+        cudaError_t  ret = cudaMallocAsync(devPtr, size, hStream);
+        //if(ret == cudaSuccess) {
+        //   trackDriverAllocation(size, (void *)*devPtr); 
+        //}
+
+        return ret;
+    }
+
 
     cudaError_t cudaMallocManaged_proxy ( void** devPtr, size_t size, unsigned int  flags) {
         cudaError_t  ret = cudaMallocManaged(devPtr, size, flags);
@@ -216,6 +232,18 @@ namespace mlinsight {
         CUresult rlt=cuMemUnmap(ptr, size);
         //pthread_mutex_unlock(&pytorchMemoryManagementLock);
         return rlt; 
-
     }
+
+    CUresult cuMemCreate_proxy(CUmemGenericAllocationHandle *handle, size_t size, const CUmemAllocationProp *prop, unsigned long long flags){
+        CUresult rlt = cuMemCreate(handle, size, prop, flags);
+        INFO_LOGS("cuMemCreate malloc %zd bytes ptr %p", size, handle);
+        return rlt;
+    }
+
+    CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags){
+        CUresult rlt = cuMemMap(ptr,size,offset,handle,flags);
+        INFO_LOGS("cuMemMap malloc %zd bytes ptr %p", size, ptr);
+        return rlt;
+    }
+
 }

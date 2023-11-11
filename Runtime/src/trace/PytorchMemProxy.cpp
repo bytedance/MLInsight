@@ -60,10 +60,13 @@ struct CudaCachingAllocatorProxy : public c10::Allocator {
 };
 
 
+
+
 raw_delete_t realRawDeletePtr=nullptr;
 allocate_t realAllocatePtr=nullptr;
 AllocatorGet_t realAllocatorGetPtr=nullptr;
 c10::Allocator* cudaAllocatorProxyPtr=nullptr;
+std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr=nullptr;
 void* realGetDeviceStatsPtr=nullptr;
 
 void raw_delete_proxy(void* ptr){

@@ -33,6 +33,11 @@ CUresult cuMemUnmap_proxy ( CUdeviceptr ptr, size_t size );
 cudaError_t cudaMalloc_proxy ( void** devPtr, size_t size );
 cudaError_t cudaMallocManaged_proxy ( void** devPtr, size_t size, unsigned int  flags);
 cudaError_t cudaFree_proxy ( void* devPtr );
+cudaError_t cudaMallocAsync_proxy(void **devPtr, size_t size, cudaStream_t hStream);
+CUresult cuMemCreate_proxy(CUmemGenericAllocationHandle *handle, size_t size, const CUmemAllocationProp *prop, unsigned long long flags);
+CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags);
+
+
 #endif
 }
 #endif

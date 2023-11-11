@@ -6,11 +6,21 @@
 #include "common/Logging.h"
 #include "common/MemoryHeap.h"
 #include "trace/hook/HookInstaller.h"
+#include <c10/core/Allocator.h>
+#include <c10/cuda/CUDACachingAllocator.h>
+
 
 namespace mlinsight{
+
+std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*> pytorch2AllocationAtomicPtr;
+extern std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr;
+
+
 void *dlopen_proxy(const char *__file, int __mode) __THROWNL {
     void *ret = dlopen(__file, __mode);
-    //INFO_LOGS("Installing on to open %s",__file);
+    INFO_LOGS("Installing on to open %s",__file);
+    INFO_LOGS("realPytorch2AllocatorPtr=%p",realPytorch2AllocatorPtr);
+
     if(ret){
         //Successfully opened the library
         //DBG_LOGS("Installing on to open %s",__file);
@@ -114,6 +124,8 @@ void *dlsym_proxy(void *__restrict __handle, const char *__restrict __name) __TH
     }
 
     if(retSymbolHookHint.shouldHook){
+        //INFO_LOGS("dlsym API hooked: name:%s bind:%zd type:%zd addr:%p",__name,bind,type,realFuncAddr);
+           
         if(retSymbolHookHint.addressOverride){
             realFuncAddr=retSymbolHookHint.addressOverride;
         }
@@ -130,6 +142,8 @@ void *dlsym_proxy(void *__restrict __handle, const char *__restrict __name) __TH
             pthread_mutex_unlock(&instance->dynamicLoadingLock);
             return retAddr;
         }
+    }else{
+         INFO_LOGS("dlsym API NOT hooked: name:%s bind:%zd type:%zd addr:%p",__name,bind,type,realFuncAddr);
     }
     //INFO_LOGS("thread:%p pthread_mutex_unlock(&inst->dynamicLoadingLock)",pthread_self());
     pthread_mutex_unlock(&instance->dynamicLoadingLock);
@@ -141,7 +155,7 @@ void *dlsym_proxy(void *__restrict __handle, const char *__restrict __name) __TH
 //TODO: Handle this like dlopen
 
 void *dlmopen_proxy(Lmid_t __nsid, const char *__file, int __mode) __THROW {
-    //INFO_LOG("dlmopen Interception Start");
+    INFO_LOGS("The \"dlmopen\" support is underway and the current MLInsight verison will not install on %s",__file);
     //INFO_LOG("dlmopen Interception End");
     return dlmopen(__nsid,__file,__mode);
 }
@@ -152,7 +166,7 @@ void *dlvsym_proxy(void *__restrict __handle,
                    const char *__restrict __name,
                    const char *__restrict __version)
 __THROW {
-    //INFO_LOG("dlvsym Interception Start");
+    INFO_LOGS("The \"dlvsym\" support is underway and the current MLInsight verison will not hook %s",__name);
     //INFO_LOG("dlvsym Interception End");
     return dlvsym(__handle,__name,__version);
 }
