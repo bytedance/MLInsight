@@ -1,0 +1,12 @@
+#This file is part of MLInsight.
+#@author: Steven Tang <steven.tang@bytedance.com>
+
+[build-system]
+requires = [
+    "setuptools>=42",
+    "scikit-build",
+    "cmake>=3.14",
+    "ninja",
+    "pybind11>=2.6"
+]
+build-backend = "setuptools.build_meta"
