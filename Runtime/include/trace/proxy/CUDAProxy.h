@@ -30,9 +30,10 @@ CUresult cuMemHostUnregister_proxy ( void* ptr );
 CUresult cuMemUnmap_proxy ( CUdeviceptr ptr, size_t size );
 
 #ifdef CUDA_VERSION_121_LATER
-cudaError_t cudaMalloc_proxy ( void** devPtr, size_t size );
-cudaError_t cudaMallocManaged_proxy ( void** devPtr, size_t size, unsigned int  flags);
-cudaError_t cudaFree_proxy ( void* devPtr );
+CUresult cuMemCreate_proxy(CUmemGenericAllocationHandle *handle, size_t size, const CUmemAllocationProp *prop, unsigned long long flags);
+CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags);
+
+
 #endif
 }
 #endif
