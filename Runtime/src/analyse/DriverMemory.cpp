@@ -126,7 +126,7 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
     // pytroch allocator (if possible)'s information correspondingly.
     void trackDriverAllocation(ssize_t size, void *devicePtr) {
 
-        //cout << "trackDriverAllocation allocatedSize - " << allocatedSize << ", devicePtr " << devicePtr << endl;
+        //cout << "trackDriverAllocation size - " << size << ", devicePtr " << devicePtr << endl;
         if (devicePtr == nullptr) {
             return;
         }

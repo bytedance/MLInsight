@@ -25,6 +25,7 @@
 #include "trace/proxy/PthreadProxy.h"
 #include "analyse/SerializationDataStructure.h"
 #include "analyse/LogicalClock.h"
+#include "trace/proxy/PytorchMemProxy.h"
 
 #ifdef USE_TORCH
 #include "trace/proxy/PytorchMemProxy.h"
@@ -76,6 +77,8 @@ namespace mlinsight {
         //DBG_LOGS("ContextPtr=%p",curContextPtr);
         //DBG_LOGS("&ContextPtr.recordArray=%p",&curContextPtr->recordArray[0].internalArray);
         //DBG_LOGS("ContextPtr.recordArray=%p",&curContextPtr->recordArray[0].internalArray[2].count);
+        //INFO_LOGS("&realPytorch2AllocatorPtr=%p realPytorch2AllocatorPtr=%p",&realPytorch2AllocatorPtr,realPytorch2AllocatorPtr);
+
 
         return replacePltEntry();
     }
@@ -158,6 +161,7 @@ namespace mlinsight {
             };
             ProxySymbol proxySymbol[]={
                 {"fork",(void*)fork_proxy},{"dlsym",(void*)dlsym_proxy},{"dlopen",(void*)dlopen_proxy},
+                {"dlvsym",(void*) dlvsym_proxy},{"dlmopen",(void*) dlmopen_proxy},
                 {"cuMemFree",(void*)cuMemFree_proxy},
                 {"cuMemAlloc",(void*)cuMemAlloc_proxy},
                 {"cuMemAllocHost",(void*)cuMemAllocHost_proxy},
@@ -167,20 +171,22 @@ namespace mlinsight {
                 //{"cuMemFreeHost",(void*)cuMemFreeHost_proxy},
                 {"cuMemFreeAsync",(void*)cuMemFreeAsync_proxy},
                 {"cuGetProcAddress",(void*)cuGetProcAddress_proxy},
+                {"cuGetProcAddress_v2",(void*)cuGetProcAddress_proxy},
                 {"cuMemAddressFree",(void*)cuMemAddressFree_proxy},
                 {"cuMemAllocManaged",(void*)cuMemAllocManaged_proxy},
                 {"pthread_create",(void*)pthread_create_proxy},
                 {"cuMemHostUnregister",(void*)cuMemHostUnregister_proxy},
             #ifdef CUDA_VERSION_121_LATER
-                {"cudaMalloc",(void*)cudaMalloc_proxy},
-                {"cudaMallocManaged", (void *)cudaMallocManaged_proxy},
-                {"cudaFree", (void *)cudaFree_proxy},
+                {"cuMemCreate",(void *)cuMemCreate_proxy},
+                {"cuMemMap",(void *)cuMemMap_proxy},
             #endif
 			#ifdef USE_TORCH
+              #ifndef TORCH_VERSION_20_LATER
                 {"setMemoryFraction",(void*)setMemoryFraction_proxy},
                 {"_ZN3c104cuda20CUDACachingAllocator3getEv",(void*)allocator_get_proxy,(void**)&realAllocatorGetPtr},
                 {"_ZN3c104cuda20CUDACachingAllocator10raw_deleteEPv",(void*)raw_delete_proxy,(void**)&realRawDeletePtr},
                 {"_ZN3c104cuda20CUDACachingAllocator14getDeviceStatsEi",nullptr,(void**)&realGetDeviceStatsPtr}
+              #endif
             #endif
             };
             const ssize_t skipSymbolArrSize=sizeof(skipSymbol)/sizeof(skipSymbol[0]);
@@ -192,6 +198,10 @@ namespace mlinsight {
             for(int i=0;i<proxySymbolArrSize;++i){
                 instance->hookHintMap.insert(proxySymbol[i].name,proxySymbol[i].address, proxySymbol[i].realAddressPtr);
             }
+
+            //Hook pytroch 2.x memory allocator
+            instance->hookHintMap.insert("_ZN3c104cuda20CUDACachingAllocator9allocatorE",false,nullptr,(void**)&realPytorch2AllocatorPtr,0);
+            
         }
         return instance;
     }
@@ -232,6 +242,7 @@ namespace mlinsight {
                                          ELFSecInfo &pltSecureSection, Elf64_Rela*& relaSection, ssize_t relaEntrySize, FILE *symInfoFile, uint8_t *baseAddr,
                                          uint8_t *startAddr, uint8_t *endAddr){
 
+        //INFO_LOGS("%d: parseRelaSection now", getpid());
         for (ssize_t i = 0; i < relaEntrySize; ++i) {
             const char *funcName;
             Elf64_Word type;
@@ -243,14 +254,23 @@ namespace mlinsight {
             SymbolHookHint retSymbolHookHint;
             shouldHookThisSymbol(funcName, bind, type,retSymbolHookHint);
             
+            if(strcmp(funcName,"_ZN3c104cuda20CUDACachingAllocator9allocatorE")==0 && realPytorch2AllocatorPtr == nullptr){
+                realPytorch2AllocatorPtr=(std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>*)*gotAddr;
+                //INFO_LOGS("Pid:%zd The address of pytorch memory allocator is %p",getpid(),realPytorch2AllocatorPtr->load());
+                Pytorch2AllocatorProxy* allocatorProxy=new Pytorch2AllocatorProxy(realPytorch2AllocatorPtr->load());
+                realPytorch2AllocatorPtr->store(allocatorProxy);
+            }
+
             if(retSymbolHookHint.realAddressPtr){
                 *(retSymbolHookHint.realAddressPtr)=*gotAddr;
             }
 
             if (!retSymbolHookHint.shouldHook) {
+                //INFO_LOGS("API NOT hooked: fileId:%zd symbolId:%zd name:%s bind:%zd type:%zd addr:%p",fileId,allExtSymbol.getSize(),funcName,bind,type,gotAddr);
                 continue;
+            }else{
+            //    INFO_LOGS("API hooked: fileId:%zd symbolId:%zd name:%s bind:%zd type:%zd addr:%p",fileId,allExtSymbol.getSize(),funcName,bind,type,gotAddr);
             }
-            //INFO_LOGS("shouldHookThisSymbol ? id:%zd name:%s bind:%zd type:%zd addr:%p", allExtSymbol.getSize(),funcName,bind,type,gotAddr);
 
 
             //Get function id from plt entry
@@ -585,7 +605,7 @@ namespace mlinsight {
             //INFO_LOGS("globalFileId=%zd", globalFileId);
             FileEntry &curFileEntry = pmParser.getFileEntry(globalFileId);
             const char *curFilePathName = pmParser.getStr(curFileEntry.pathNameStartIndex);
-            //DBG_LOGS("Install newly discovered file:%s", curFilePathName);
+            //DBG_LOGS("Install newly discovered file:%s fileId:%zd", curFilePathName, globalFileId);
             ELFImgInfo& curElfImgInfo = elfImgInfoMap[globalFileId];
             if (elfParser.parse(curFilePathName)) {
                 //Find the entry allocatedSize of plt and got
@@ -648,7 +668,7 @@ namespace mlinsight {
 
             if(stringLength==26 && strncmp(funcName,"_ZN9mlinsight10curContextE",stringLength)==0){
                 tlsOffset = (uint8_t **) autoAddBaseAddr((uint8_t *)(parser.getRelaOffset(i,parser.relaDYNSection)),baseAddr, baseAddr, endAddr);
-                INFO_LOGS("Parse TLSOffset is successful %p %p",tlsOffset,*tlsOffset);
+                //INFO_LOGS("Parse TLSOffset is successful %p %p",tlsOffset,*tlsOffset);
                 break;
             }
         }

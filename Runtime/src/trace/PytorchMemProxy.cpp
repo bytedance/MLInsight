@@ -15,10 +15,10 @@
 namespace mlinsight{
 typedef c10::DataPtr (*allocate_t)(void * ptr, size_t bytes);
 
+#ifndef TORCH_VERSION_20_LATER
 struct CudaCachingAllocatorProxy : public c10::Allocator {
-  c10::Allocator* realCUDACachineAllocatorPtr;
-    CudaCachingAllocatorProxy(Allocator* realCUDACachineAllocatorPtr):realCUDACachineAllocatorPtr(realCUDACachineAllocatorPtr){
-        
+   c10::Allocator* realCUDACachineAllocatorPtr;
+   CudaCachingAllocatorProxy(Allocator* realCUDACachineAllocatorPtr):realCUDACachineAllocatorPtr(realCUDACachineAllocatorPtr){
   }
 
 
@@ -30,14 +30,9 @@ struct CudaCachingAllocatorProxy : public c10::Allocator {
       trackPytorchAllocation(size, allocatePtr.get());
       return allocatePtr;
     }
-    #ifdef TORCH_VERSION_20_LATER
-    catch (const c10::OutOfMemoryError& e)
-    #else
     catch (const c10::CUDAOutOfMemoryError& e)
-    #endif
     {  //c10/util/Exception.h
 
-      //ERR_LOGS("Caught c10::CUDAOutOfMemoryError: \n%s\n%s",e.msg().c_str(),e.what());
       reportMemoryProfile(size);
       //processCUDAOOMError(e, allocatedSize);
       //pthread_mutex_unlock(&pytorchMemoryManagementLock);
@@ -47,17 +42,9 @@ struct CudaCachingAllocatorProxy : public c10::Allocator {
       throw e;
     }
   }
-
-#if 0
-  // We can't intercept the raw_deleter this way
-  c10::DeleterFnPtr raw_deleter() const override {
-    if(!realRawDeletePtr){
-        realRawDeletePtr=realCUDACachineAllocatorPtr->raw_deleter();
-    }
-    return raw_delete_proxy;
-  }
-#endif
 };
+
+
 
 
 raw_delete_t realRawDeletePtr=nullptr;
@@ -66,10 +53,10 @@ AllocatorGet_t realAllocatorGetPtr=nullptr;
 c10::Allocator* cudaAllocatorProxyPtr=nullptr;
 void* realGetDeviceStatsPtr=nullptr;
 
-void raw_delete_proxy(void* ptr){
+static void raw_delete_proxy(void* ptr){
   //pthread_mutex_lock(&pytorchMemoryManagementLock);
   assert(realRawDeletePtr!=nullptr);
-  //printf("raw_delete_proxy ptr %p now!!!!!!\n", ptr);
+  printf("******raw_delete_proxy ptr %p now!!!!!!*****\n", ptr);
   trackPytorchFree(ptr);
   realRawDeletePtr(ptr);
   //pthread_mutex_unlock(&pytorchMemoryManagementLock);
@@ -93,5 +80,9 @@ c10::Allocator* allocator_get_proxy(void) {
     cudaCachingAllocatorFractionMap[device]=fraction;
     //pthread_mutex_unlock(&pytorchMemoryManagementLock);
   }
+#else
+  c10::DeleterFnPtr realDeleter = nullptr;
+  std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr=nullptr;
+#endif
 
 }

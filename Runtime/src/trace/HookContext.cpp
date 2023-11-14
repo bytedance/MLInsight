@@ -14,6 +14,7 @@
 #include "common/Array.h"
 #include "analyse/DriverMemory.h"
 
+
 namespace mlinsight{
 uint64_t logicalClock;
 std::atomic<uint64_t> wallclockSnapshot;
@@ -288,11 +289,11 @@ void saveData(HookContext *curContextPtr, bool finalize) {
 
 }
 
+
 void exitHandler(HookContext *curContextPtr, bool finalize) {
     if(finalize == true) {
         reportMemoryProfile(0);
     }
-
     saveData(curContextPtr, finalize);
 }
 

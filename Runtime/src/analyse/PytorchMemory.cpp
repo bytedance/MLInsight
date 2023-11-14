@@ -82,7 +82,7 @@ void trackTorchCudaMalloc(void * devicePtr, ssize_t size) {
         torchMem.requestSizeAtMaxExternalFrag = size; 
     }
 
-    fprintf(stderr, "now cudaMalloc ptr %p size %lx\n", devicePtr, size);
+    //fprintf(stderr, "trackTorchCudaMalloc: cudaMalloc ptr %p size %lx\n", devicePtr, size);
     // Recording the block information
     torchMem.countCudaMallocs += 1; 
     torchMem.numFreedObjects += 1; 
@@ -94,6 +94,8 @@ void trackTorchCudaMalloc(void * devicePtr, ssize_t size) {
         torchMem.memFreedSmallObjects += size; 
     }
 
+    //fprintf(stderr, "trackTorchCudaMalloc: adding devicePtr %p size %lx to torchMem.mapFreeObjs\n", devicePtr, size);
+ 
     // This is a new allocated block, adding this block into the mapFreeObjs
     // We will use devicePtr as the key, as it can be used to get the object quickly later
     torchMem.mapFreeObjs[devicePtr] = new TorchObject(size, devicePtr);
@@ -165,57 +167,13 @@ void processCUDAOOMError(const c10::CUDAOutOfMemoryError&, ssize_t allocationSiz
 
     //Reference https://github.com/pytorch/pytorch/blob/67ece03c8cd632cce9523cd96efde6f2d1cc8121/c10/cuda/CUDACachingAllocator.cpp#L1660C3-L1660C3
     CUDA_ASSERT(cudaGetDevice(&deviceID));
-    
-    
-
-    //Surprisingly calling cudaMemGetInfo again will have different deviceTotal and deviceFree value, so I just use cached value.
-    //size_t deviceFree_latest;
-    //size_t deviceTotal_latest;
-    //CUDA_ASSERT(cudaMemGetInfo(&deviceTotal_latest, &deviceTotal_latest));
-#if 0
-    std::this_thread::sleep_for (std::chrono::seconds(10));
-    ssize_t alreadyAllocated=-1;
-    ssize_t reserved=-1;
-
-    if(mlinsight::realGetDeviceStatsPtr!=nullptr){
-        const DeviceStats& deviceStats=((GetDevicePtr_t)mlinsight::realGetDeviceStatsPtr)(deviceID);
-        alreadyAllocated=deviceStats.allocated_bytes[static_cast<size_t>(StatType::AGGREGATE)].current;
-        reserved=deviceStats.reserved_bytes[static_cast<size_t>(StatType::AGGREGATE)].current;
-    }else{
-        ERR_LOG("getDeviceStats is not an API, cannot get alreadyAllocated and reserved.");
-    }
-    ssize_t allowedMemorySize=0;
-    if(mlinsight::cudaCachingAllocatorFractionMap.find(deviceID)==mlinsight::cudaCachingAllocatorFractionMap.end()){
-        allowedMemorySize=deviceTotal_cached;
-    }else{
-        allowedMemorySize=static_cast<ssize_t>(mlinsight::cudaCachingAllocatorFractionMap[deviceID] * deviceTotal_cached);
-    }
-
-
-    //=cudaCachingAllocatorFractionMap[]
-    ERR_LOGS("CUDA out of memory log:\n"
-           "Tried to allocate: %s\n"
-           "GPU: %d\n"
-           "Total Capacity: %s\n"
-           "Already allocated: %s\n"
-           "Free: %s\n"
-           "Allowed bytes for this memory allocator: %s\n"
-           "Reserved Total: %s\n"
-          ,format_size(allocationSize).c_str(),
-          deviceID,
-          format_size(deviceTotal_cached).c_str(),
-          format_size(alreadyAllocated).c_str(),
-          format_size(deviceFree_cached).c_str(),
-          format_size(allowedMemorySize).c_str(),
-          format_size(reserved).c_str());
-#endif
 }
 
 void trackPytorchAllocation(ssize_t size, void * ptr) {
     if(ptr == nullptr)
         return;
     
-    fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
+    //fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
 
     // Update the torch's allocation information
     torchMem.alloc.numAllocs += 1;
@@ -345,7 +303,7 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
         torchMem.memFreedSmallObjects -= current->size; 
     }
 
-    printf("Allocation: ptr %p size %lx\n", ptr, size);
+    //printf("trackPytorchAllocation: allocating ptr %p size %lx now\n", ptr, size);
 
     //Get pytorch callstack
     current->updatePythonCallStack();
@@ -363,7 +321,7 @@ void trackPytorchFree(void * ptr) {
     if(ptr == nullptr)
         return;
 
-    fprintf(stderr, "Free: ptr %p\n", ptr);
+    //fprintf(stderr, "Free: ptr %p\n", ptr);
 
     // Finding the entry in the hash map
     if(torchMem.alloc.mapAliveObjs.count(ptr) == 0) {
