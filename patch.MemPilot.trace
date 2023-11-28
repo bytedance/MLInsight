@@ -1,0 +1,315 @@
+diff -Nur Runtime-orig/include/analyse/PytorchMemory.h Runtime/include/analyse/PytorchMemory.h
+--- Runtime-orig/include/analyse/PytorchMemory.h	2023-11-18 05:49:13.196350000 +0800
++++ Runtime/include/analyse/PytorchMemory.h	2023-11-29 03:42:01.041572000 +0800
+@@ -16,8 +16,8 @@
+ #include "trace/type/PyCodeExtra.h"
+ #include "trace/hook/PyHook.h"
+ 
+-
+ namespace mlinsight{
++extern ssize_t allocationSizeSum;
+ class TorchObject {
+ public:
+     size_t  initSize=0;  // initial block allocatedSize;
+@@ -62,7 +62,8 @@
+         return (prev != nullptr) || (next != nullptr);
+     }
+ 
+-    void updatePythonCallStack() {
++
++    void updatePythonCallStack(ssize_t allocationSize=0) {
+         //Acquire GIL
+         PyGILState_STATE gstate;
+         gstate = PyGILState_Ensure();
+@@ -89,6 +90,56 @@
+         }
+         callstack.levels=i;
+ 
++        // if(i==0){
++        //     print_stacktrace();
++        //     assert(currentFrame==nullptr);
++        //     if(currentFrame!=nullptr){
++        //         exit(-10);
++        //     }
++        //     //getchar();
++        // }
++        // if(callstack.levels<5){
++            PyCodeExtraType currentStageType=PyCodeExtraType::UNKNOWN;
++            fprintf(stderr,"===========PYCALLSTACK.LEVELS START\n");
++            //fprintf(stderr,"Thread: %p\n",pthread_self());
++            fprintf(stderr,"AllocationSize: %zd\n", allocationSize);
++            // if(allocationSize==33554432 && callstack.levels==0){
++            //     print_stacktrace();
++            // }
++            fprintf(stderr, "INFO: %d,", callstack.levels);
++
++            for(int i=0;i<8;++i){
++                const PyCallStack& pyCallStack=this->callstack.array[i];
++
++                fprintf(stderr,"%s-%zd,",pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++            }
++            fprintf(stderr, "\n");
++
++            for(int i=0;i<callstack.levels;++i){
++                const PyCallStack& pyCallStack=this->callstack.array[i];
++                if(currentStageType==PyCodeExtraType::UNKNOWN){
++                    currentStageType=pyCallStack.cachedCodeExtra->type;
++                }
++
++                fprintf(stderr,"%d Function: %s Line: %s:%zd\n",i,pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),
++                     pyCallStack.cachedCodeExtra->pythonSourceFileName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++            }
++            fprintf(stderr,"===========PYCALLSTACK.LEVELS END\n");
++
++            if(currentStageType==PyCodeExtraType::UNKNOWN){
++                fprintf(stderr,"MLInsight thinks that the callstack type is UNKNOWN\n");
++            } else if(currentStageType==PyCodeExtraType::FORWARD){
++                fprintf(stderr,"MLInsight thinks that the callstack type is FORWARD\n");
++            } else if(currentStageType==PyCodeExtraType::BACKWARD){
++                fprintf(stderr,"MLInsight thinks that the callstack type is BACKWARD\n");
++            }
++
++        // }
++        //fprintf(stderr,"===========CCALLSTACK.LEVELS START\n");
++        //print_stacktrace();
++        //fprintf(stderr,"===========CCALLSTACK.LEVELS END\n");
++
++
+         //fprintf(stderr, "Collecting callstacks with level %d\n", callstack.levels);
+         //Release GIL
+         PyGILState_Release(gstate);
+@@ -100,11 +151,58 @@
+      * Debug only
+     */
+     void printPythonCallStack(){
++        // printf("Callstack: ");
++        PyCodeExtraType currentStageType=PyCodeExtraType::UNKNOWN;
+         for(int i=0;i<this->callstack.levels;++i){
+             const PyCallStack& pyCallStack=this->callstack.array[i];
+-            INFO_LOGS("%d Function: %s Line: %s:%zd",i,pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),
+-                      pyCallStack.cachedCodeExtra->pythonSourceFileName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++            if(pyCallStack.cachedCodeExtra->type==PyCodeExtraType::FORWARD){
++                //INFO_LOGS("%d identified as Forward Function: %s Line: %s:%zd\n",i,pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),
++                //      pyCallStack.cachedCodeExtra->pythonSourceFileName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++                //assert(currentStageType!=PyCodeExtraType::BACKWARD);
++                INFO_LOG("Callstack type is FORWARD");
++                currentStageType=pyCallStack.cachedCodeExtra->type;
++                break;
++            } else if(pyCallStack.cachedCodeExtra->type==PyCodeExtraType::BACKWARD){
++                // if(currentStageType==PyCodeExtraType::FORWARD){
++                //     INFO_LOG("====================CALLSTACK_PRINT_START");
++                //     for(int i=0;i<this->callstack.levels;++i){
++                //         const PyCallStack& pyCallStack=this->callstack.array[i];
++                //         assert(pyCallStack.cachedCodeExtra!=nullptr);
++                //         INFO_LOGS("Mismatched Stage Function: %s Line: %s:%zd",pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),
++                //                 pyCallStack.cachedCodeExtra->pythonSourceFileName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++                            
++                //     }
++                //     INFO_LOG("====================CALLSTACK_PRINT_END");
++                // }
++                INFO_LOG("Callstack type is BACKWARD");
++                currentStageType=pyCallStack.cachedCodeExtra->type;
++                break;
++            }
++            // INFO_LOGS("%d identified as Backward Function: %s Line: %s:%zd\n",i,pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),
++            //          pyCallStack.cachedCodeExtra->pythonSourceFileName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++                
++            //printf("%p ", pyCallStack);
+         }
++        // if(currentStageType==PyCodeExtraType::UNKNOWN){
++            INFO_LOG("====================CALLSTACK_PRINT_START");
++            for(int i=0;i<this->callstack.levels;++i){
++                const PyCallStack& pyCallStack=this->callstack.array[i];
++                assert(pyCallStack.cachedCodeExtra!=nullptr);
++                INFO_LOGS("Unknown Stage Function: %s Line: %s:%zd",pyCallStack.cachedCodeExtra->pythonFunctionName.c_str(),
++                         pyCallStack.cachedCodeExtra->pythonSourceFileName.c_str(),pyCallStack.pythonSourceFileLineNumber);
++            }
++            INFO_LOG("====================CALLSTACK_PRINT_END");
++        // }
++
++
++
++        // if(currentStageType==PyCodeExtraType::FORWARD){
++        //     printf(" [FORWARD]\n");
++        // }else if(currentStageType==PyCodeExtraType::BACKWARD){
++        //     printf(" [BACKWARD]\n");
++        // }else{
++        //     printf(" [UNKNOWN]\n");
++        // }
+     }
+ };
+ 
+diff -Nur Runtime-orig/include/common/Tool.h Runtime/include/common/Tool.h
+--- Runtime-orig/include/common/Tool.h	2023-11-18 05:49:13.247376000 +0800
++++ Runtime/include/common/Tool.h	2023-11-29 03:42:36.183362000 +0800
+@@ -25,8 +25,8 @@
+ #include "common/CallStack.h"
+ 
+ namespace mlinsight {
+-    #define CPP_CALL_STACK_LEVEL 20
+-    #define PYTHON_CALL_STACK_LEVEL 20
++    #define CPP_CALL_STACK_LEVEL 40
++    #define PYTHON_CALL_STACK_LEVEL 40
+ 
+     inline int64_t getunixtimestampms() {
+         uint32_t lo, hi;
+@@ -120,6 +120,8 @@
+     bool strStartsWith(std::string const &fullString, std::string const &ending);
+ 
+     bool strContains(std::string const &fullString, std::string const &ending);
++    
++    bool asciiStrContainsIgnoreCase(const std::string &fullString, const std::string &keyword);
+ 
+     /**
+      * Replace multiple space by one
+diff -Nur Runtime-orig/include/trace/type/PyCodeExtra.h Runtime/include/trace/type/PyCodeExtra.h
+--- Runtime-orig/include/trace/type/PyCodeExtra.h	2023-11-18 05:49:13.307496000 +0800
++++ Runtime/include/trace/type/PyCodeExtra.h	2023-11-15 13:40:31.147197000 +0800
+@@ -4,12 +4,19 @@
+ #include "trace/type/RecordingDataStructure.h"
+ 
+ namespace mlinsight{
++    enum PyCodeExtraType{
++        UNKNOWN,
++        FORWARD,
++        BACKWARD
++    };
++
+     class PyCodeExtra{
+     public: 
+         Array<FuncID> pyModuleRecArrMap; //Map python module (caller) to funcId in the recording array
+         FileID pyModuleFileId=0; //The fileID of the newly loaded python module (callee)
+         std::string pythonSourceFileName;
+         std::string pythonFunctionName;
++        PyCodeExtraType type=PyCodeExtraType::UNKNOWN;
+     };
+ 
+ 
+diff -Nur Runtime-orig/src/analyse/PytorchMemory.cpp Runtime/src/analyse/PytorchMemory.cpp
+--- Runtime-orig/src/analyse/PytorchMemory.cpp	2023-11-18 05:49:13.321153000 +0800
++++ Runtime/src/analyse/PytorchMemory.cpp	2023-11-18 01:50:20.281841000 +0800
+@@ -169,11 +169,15 @@
+     CUDA_ASSERT(cudaGetDevice(&deviceID));
+ }
+ 
++TorchObject debugCurrent;
++ssize_t allocationSizeSum=0;
+ void trackPytorchAllocation(ssize_t size, void * ptr) {
+-    if(ptr == nullptr)
++    if(ptr == nullptr || size == 0)
+         return;
+     
+-    //fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
++    fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
++    debugCurrent.updatePythonCallStack(size);
++	//return;
+ 
+     // Update the torch's allocation information
+     torchMem.alloc.numAllocs += 1;
+@@ -306,7 +310,7 @@
+     //printf("trackPytorchAllocation: allocating ptr %p size %lx now\n", ptr, size);
+ 
+     //Get pytorch callstack
+-    current->updatePythonCallStack();
++    //current->updatePythonCallStack();
+ 
+     // Remove the current object from the mapFreeObjs but inserting it into mapAliveObjs.
+     torchMem.mapFreeObjs.erase(ptr);
+@@ -318,6 +322,9 @@
+ 
+ 
+ void trackPytorchFree(void * ptr) {
++    fprintf(stderr, "trackPytorchFree ptr %p\n", ptr);
++//    return;
++
+     if(ptr == nullptr)
+         return;
+ 
+diff -Nur Runtime-orig/src/common/Tool.cpp Runtime/src/common/Tool.cpp
+--- Runtime-orig/src/common/Tool.cpp	2023-11-18 05:49:13.333872000 +0800
++++ Runtime/src/common/Tool.cpp	2023-11-16 02:21:01.984818000 +0800
+@@ -11,6 +11,7 @@
+ #include <cstring>
+ #include <cmath>
+ #include <csignal>
++#include <algorithm>
+ 
+ 
+ 
+@@ -178,6 +179,18 @@
+         return fullString.find(keyword) != std::string::npos;
+     }
+ 
++
++    //This comparator assumes ASCII encoding for efficiency
++    static bool ASCIIStringEqualCaseInsentitive(const char& ch1, const char& ch2){
++        int difference=ch2-ch1;
++        return difference == 0 || difference == 32 || difference == -32;
++    }
++
++    bool asciiStrContainsIgnoreCase(const std::string &fullString, const std::string &keyword) {
++        auto it = std::search(fullString.begin(), fullString.end(), keyword.begin(), keyword.end(), ASCIIStringEqualCaseInsentitive);
++        return it != fullString.end();
++    }
++
+     bool collapseStrSpace(const std::string &oriString, std::string &outString) {
+         //todo: expensive op. Allocate with heap.
+         outString = oriString;
+@@ -206,12 +219,12 @@
+ 
+     /* Obtain a backtrace and print it to stdout. */
+     void print_stacktrace (void) {
+-    #define CALL_STACK_NUM 15
+-    void *array[CALL_STACK_NUM];
++    fprintf(stderr,"========================================================OUTPUTSTART\n");
++    void *array[CPP_CALL_STACK_LEVEL];
+     char **strings;
+     int size, i;
+ 
+-    size = backtrace (array, CALL_STACK_NUM);
++    size = backtrace (array, CPP_CALL_STACK_LEVEL);
+     #if 0
+     for (i = 0; i < allocatedSize; i++) {
+         printf("[%d], %p\n", i, array[i]); 
+@@ -221,11 +234,11 @@
+     if (strings != NULL)
+     {
+ 
+-        printf ("Obtained %d stack frames.\n", size);
++        fprintf(stderr,"Obtained %d stack frames.\n", size);
+         for (i = 0; i < size; i++)
+-        printf ("%s\n", strings[i]);
++            fprintf(stderr,"%s\n", strings[i]);
+     }
+-
++    fprintf(stderr,"========================================================OUTPUTEND\n");
+     free (strings);
+     }
+ 
+@@ -252,4 +265,4 @@
+     void getCppStacktrace(CallStack<void*, CPP_CALL_STACK_LEVEL>& retCallStack) {
+         retCallStack.levels=backtrace(retCallStack.array, CPP_CALL_STACK_LEVEL);
+     }
+-}
+\ No newline at end of file
++}
+diff -Nur Runtime-orig/src/trace/PyHook.cpp Runtime/src/trace/PyHook.cpp
+--- Runtime-orig/src/trace/PyHook.cpp	2023-11-18 05:49:13.364928000 +0800
++++ Runtime/src/trace/PyHook.cpp	2023-11-28 07:25:44.527745000 +0800
+@@ -77,7 +77,15 @@
+             */
+             curCodeExtra->pythonSourceFileName=PyUnicode_AsUTF8(f->f_code->co_filename);
+             curCodeExtra->pythonFunctionName=PyUnicode_AsUTF8(f->f_code->co_name);
+-            
++
++            if(asciiStrContainsIgnoreCase(curCodeExtra->pythonFunctionName,"forward")){
++                INFO_LOGS("Function %s identified as forward",curCodeExtra->pythonFunctionName.c_str());
++                curCodeExtra->type=PyCodeExtraType::FORWARD;
++            } else if(asciiStrContainsIgnoreCase(curCodeExtra->pythonFunctionName,"backward")){
++                curCodeExtra->type=PyCodeExtraType::BACKWARD;
++                INFO_LOGS("Function %s identified as backward",curCodeExtra->pythonFunctionName.c_str());
++            }
++
+ #if 0 //Block timing code
+             /*
+             * Allocate code timing block 
