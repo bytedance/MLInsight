@@ -1,6 +1,6 @@
-diff -Nur Runtime-original/include/analyse/PytorchMemory.h Runtime/include/analyse/PytorchMemory.h
---- Runtime-original/include/analyse/PytorchMemory.h	2023-11-12 03:03:50.659528000 +0800
-+++ Runtime/include/analyse/PytorchMemory.h	2023-11-12 03:07:36.687827000 +0800
+diff -Nur Runtime-orig/include/analyse/PytorchMemory.h Runtime/include/analyse/PytorchMemory.h
+--- Runtime-orig/include/analyse/PytorchMemory.h	2023-11-18 05:49:13.196350000 +0800
++++ Runtime/include/analyse/PytorchMemory.h	2023-11-15 13:40:31.129656000 +0800
 @@ -18,6 +18,7 @@
  
  
@@ -127,9 +127,18 @@ diff -Nur Runtime-original/include/analyse/PytorchMemory.h Runtime/include/analy
      }
  };
  
-diff -Nur Runtime-original/include/common/Tool.h Runtime/include/common/Tool.h
---- Runtime-original/include/common/Tool.h	2023-11-12 03:03:50.712746000 +0800
-+++ Runtime/include/common/Tool.h	2023-11-12 03:07:36.692505000 +0800
+diff -Nur Runtime-orig/include/common/Tool.h Runtime/include/common/Tool.h
+--- Runtime-orig/include/common/Tool.h	2023-11-18 05:49:13.247376000 +0800
++++ Runtime/include/common/Tool.h	2023-11-16 02:21:49.308902000 +0800
+@@ -25,7 +25,7 @@
+ #include "common/CallStack.h"
+ 
+ namespace mlinsight {
+-    #define CPP_CALL_STACK_LEVEL 20
++    #define CPP_CALL_STACK_LEVEL 40
+     #define PYTHON_CALL_STACK_LEVEL 20
+ 
+     inline int64_t getunixtimestampms() {
 @@ -120,6 +120,8 @@
      bool strStartsWith(std::string const &fullString, std::string const &ending);
  
@@ -139,9 +148,9 @@ diff -Nur Runtime-original/include/common/Tool.h Runtime/include/common/Tool.h
  
      /**
       * Replace multiple space by one
-diff -Nur Runtime-original/include/trace/type/PyCodeExtra.h Runtime/include/trace/type/PyCodeExtra.h
---- Runtime-original/include/trace/type/PyCodeExtra.h	2023-11-12 03:03:50.779589000 +0800
-+++ Runtime/include/trace/type/PyCodeExtra.h	2023-11-12 03:07:36.697240000 +0800
+diff -Nur Runtime-orig/include/trace/type/PyCodeExtra.h Runtime/include/trace/type/PyCodeExtra.h
+--- Runtime-orig/include/trace/type/PyCodeExtra.h	2023-11-18 05:49:13.307496000 +0800
++++ Runtime/include/trace/type/PyCodeExtra.h	2023-11-15 13:40:31.147197000 +0800
 @@ -4,12 +4,19 @@
  #include "trace/type/RecordingDataStructure.h"
  
@@ -162,40 +171,49 @@ diff -Nur Runtime-original/include/trace/type/PyCodeExtra.h Runtime/include/trac
      };
  
  
-diff -Nur Runtime-original/src/analyse/PytorchMemory.cpp Runtime/src/analyse/PytorchMemory.cpp
---- Runtime-original/src/analyse/PytorchMemory.cpp	2023-11-12 03:03:50.792799000 +0800
-+++ Runtime/src/analyse/PytorchMemory.cpp	2023-11-12 03:17:55.844131000 +0800
-@@ -211,12 +211,18 @@
- #endif
+diff -Nur Runtime-orig/src/analyse/PytorchMemory.cpp Runtime/src/analyse/PytorchMemory.cpp
+--- Runtime-orig/src/analyse/PytorchMemory.cpp	2023-11-18 05:49:13.321153000 +0800
++++ Runtime/src/analyse/PytorchMemory.cpp	2023-11-18 01:50:20.281841000 +0800
+@@ -169,11 +169,15 @@
+     CUDA_ASSERT(cudaGetDevice(&deviceID));
  }
  
 +TorchObject debugCurrent;
 +ssize_t allocationSizeSum=0;
  void trackPytorchAllocation(ssize_t size, void * ptr) {
-     if(ptr == nullptr)
+-    if(ptr == nullptr)
++    if(ptr == nullptr || size == 0)
          return;
      
-+
-     fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
+-    //fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
++    fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
++    debugCurrent.updatePythonCallStack(size);
++	//return;
  
-+	debugCurrent.updatePythonCallStack(size);
-+	return;
-+
      // Update the torch's allocation information
      torchMem.alloc.numAllocs += 1;
-     torchMem.alloc.numAliveObjs += 1;
-@@ -360,6 +366,8 @@
+@@ -306,7 +310,7 @@
+     //printf("trackPytorchAllocation: allocating ptr %p size %lx now\n", ptr, size);
+ 
+     //Get pytorch callstack
+-    current->updatePythonCallStack();
++    //current->updatePythonCallStack();
+ 
+     // Remove the current object from the mapFreeObjs but inserting it into mapAliveObjs.
+     torchMem.mapFreeObjs.erase(ptr);
+@@ -318,6 +322,9 @@
  
  
  void trackPytorchFree(void * ptr) {
-+    return;
++    fprintf(stderr, "trackPytorchFree ptr %p\n", ptr);
++//    return;
 +
      if(ptr == nullptr)
          return;
  
-diff -Nur Runtime-original/src/common/Tool.cpp Runtime/src/common/Tool.cpp
---- Runtime-original/src/common/Tool.cpp	2023-11-12 03:03:50.804306000 +0800
-+++ Runtime/src/common/Tool.cpp	2023-11-12 03:07:36.708718000 +0800
+diff -Nur Runtime-orig/src/common/Tool.cpp Runtime/src/common/Tool.cpp
+--- Runtime-orig/src/common/Tool.cpp	2023-11-18 05:49:13.333872000 +0800
++++ Runtime/src/common/Tool.cpp	2023-11-16 02:21:01.984818000 +0800
 @@ -11,6 +11,7 @@
  #include <cstring>
  #include <cmath>
@@ -223,17 +241,23 @@ diff -Nur Runtime-original/src/common/Tool.cpp Runtime/src/common/Tool.cpp
      bool collapseStrSpace(const std::string &oriString, std::string &outString) {
          //todo: expensive op. Allocate with heap.
          outString = oriString;
-@@ -206,7 +219,8 @@
+@@ -206,12 +219,12 @@
  
      /* Obtain a backtrace and print it to stdout. */
      void print_stacktrace (void) {
 -    #define CALL_STACK_NUM 15
+-    void *array[CALL_STACK_NUM];
 +    fprintf(stderr,"========================================================OUTPUTSTART\n");
-+    #define CALL_STACK_NUM 10240
-     void *array[CALL_STACK_NUM];
++    void *array[CPP_CALL_STACK_LEVEL];
      char **strings;
      int size, i;
-@@ -221,21 +235,21 @@
+ 
+-    size = backtrace (array, CALL_STACK_NUM);
++    size = backtrace (array, CPP_CALL_STACK_LEVEL);
+     #if 0
+     for (i = 0; i < allocatedSize; i++) {
+         printf("[%d], %p\n", i, array[i]); 
+@@ -221,11 +234,11 @@
      if (strings != NULL)
      {
  
@@ -248,21 +272,16 @@ diff -Nur Runtime-original/src/common/Tool.cpp Runtime/src/common/Tool.cpp
      free (strings);
      }
  
-     void print_stacktrace (std::ofstream & output) {
-         using namespace std;
--        void *array[CPP_CALL_STACK_LEVEL];
-+        void *array[99999999];
-         char **strings;
-         int size, i;
- 
--        size = backtrace (array, CPP_CALL_STACK_LEVEL);
-+        size = backtrace (array, 99999999);
- 
-         strings = backtrace_symbols (array, size);
-         if (strings != NULL)
-diff -Nur Runtime-original/src/trace/PyHook.cpp Runtime/src/trace/PyHook.cpp
---- Runtime-original/src/trace/PyHook.cpp	2023-11-12 03:03:50.820407000 +0800
-+++ Runtime/src/trace/PyHook.cpp	2023-11-12 03:07:36.713384000 +0800
+@@ -252,4 +265,4 @@
+     void getCppStacktrace(CallStack<void*, CPP_CALL_STACK_LEVEL>& retCallStack) {
+         retCallStack.levels=backtrace(retCallStack.array, CPP_CALL_STACK_LEVEL);
+     }
+-}
+\ No newline at end of file
++}
+diff -Nur Runtime-orig/src/trace/PyHook.cpp Runtime/src/trace/PyHook.cpp
+--- Runtime-orig/src/trace/PyHook.cpp	2023-11-18 05:49:13.364928000 +0800
++++ Runtime/src/trace/PyHook.cpp	2023-11-15 13:40:31.185701000 +0800
 @@ -77,7 +77,15 @@
              */
              curCodeExtra->pythonSourceFileName=PyUnicode_AsUTF8(f->f_code->co_filename);
