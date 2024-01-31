@@ -34,7 +34,7 @@ namespace mlinsight {
         file = fopen(elfPath, "rb");
         //INFO_LOGS("Parsing %s", elfPath);
         if (file == NULL) {
-            ERR_LOGS("Can't open ELF file \"%s\", reason: %s", elfPath, strerror(errno));
+            //ERR_LOGS("Can't open ELF file \"%s\", reason: %s", elfPath, strerror(errno));
             return false;
         }
 

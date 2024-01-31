@@ -41,14 +41,14 @@ namespace mlinsight {
         char permStr[9];
         uint8_t *addrStart;
         uint8_t *addrEnd;
-        std::stringstream ss;
-        ss << folderName << "/" << loadingId << "fileName.txt";
-        FILE *fileNameStrTbl = fopen(ss.str().c_str(), "w");
-        if (!fileNameStrTbl) {
-            fatalErrorS("Cannot open %s", ss.str().c_str());
-        }
+        //std::stringstream ss;
+        //ss << folderName << "/" << loadingId << "fileName.txt";
+        //FILE *fileNameStrTbl = fopen(ss.str().c_str(), "w");
+        //if (!fileNameStrTbl) {
+        //    fatalErrorS("Cannot open %s", ss.str().c_str());
+        //}
 
-        fprintf(fileNameStrTbl, "%s,%s\n", "globalFileId", "pathName");
+        //fprintf(fileNameStrTbl, "%s,%s\n", "globalFileId", "pathName");
 
 
         while (fgets(procMapLine, sizeof(procMapLine), procFile)) {
@@ -137,7 +137,7 @@ namespace mlinsight {
         //Clear baseStartAddr
         updateFileBaseAddr();
 
-        fclose(fileNameStrTbl);
+        //fclose(fileNameStrTbl);
         fclose(procFile);
 
 #ifndef NDEBUG
@@ -201,8 +201,11 @@ namespace mlinsight {
         ss << "/proc/self/maps";
 
         std::ifstream ifs(ss.str());
-        if (ifs.is_open())
-            std::cout << ifs.rdbuf() << std::endl;
+        std::ostringstream oss;
+        if (ifs.is_open()) {
+            oss << ifs.rdbuf();
+            OUTPUTS("%s\n", oss.str().c_str());
+        }
     }
 
     ssize_t PmParser::findFileIdByAddr(void *addr) {
@@ -238,10 +241,8 @@ namespace mlinsight {
             //DBG_LOGS("lo=%zd, md=%zd,hi=%zd",lo,md,hi);
             //DBG_LOGS("pmEntryArray[%zd]",md);
             if (pmEntryArray[md].addrStart < addr) {
-                //printf("hi(%zd) = md(%zd) - 1=(%zd)\n", hi, md, md - 1);
                 lo = md + 1;
             } else if (pmEntryArray[md].addrStart > addr) {
-                //printf("lo(%zd) = md(%zd) + 1=(%zd)\n", lo, md, md + 1);
                 hi = md - 1;
             } else {
                 //Find left bound, although this should be impossible in this case

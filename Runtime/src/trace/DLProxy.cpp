@@ -8,13 +8,14 @@
 #include "trace/hook/HookInstaller.h"
 #include <c10/core/Allocator.h>
 #include <c10/cuda/CUDACachingAllocator.h>
-
+#include "common/DependencyLibVersionSpecifier.h"
 
 namespace mlinsight{
 
+#if TORCH_VERSION_MAJOR >= 2
 std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*> pytorch2AllocationAtomicPtr;
 extern std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr;
-
+#endif
 
 void *dlopen_proxy(const char *__file, int __mode) __THROWNL {
     void *ret = dlopen(__file, __mode);

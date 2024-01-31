@@ -84,6 +84,7 @@ public:
 void trackDriverAllocation(ssize_t size, void * devicePtr);
 void trackDriverFree(void * devicePtr);
 void reportMemoryProfile(ssize_t reportMemoryProfile);
+void saveMemoryProfileFile(std::ofstream &output, ssize_t oomAllocSize, ssize_t totalMem, ssize_t freeMem);
 
 }
 #endif

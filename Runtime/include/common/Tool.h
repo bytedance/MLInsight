@@ -21,6 +21,7 @@
 #include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <dlfcn.h>
 #include "Logging.h"
 #include "common/CallStack.h"
 
@@ -132,6 +133,12 @@ namespace mlinsight {
     void print_stacktrace(std::ofstream & output);
 
     /**
+     * Debug function. Print pystacktrace.
+     */
+    void print_pystacktrace(void);
+
+    void printPythonStackTrace();
+    /**
      * @brief Collecting the stack trace and saving it to the memory pointed by ptr
      * Each level will be saved to one entry, not larger than CPP_CALL_STACK_LEVEL
      * This function will automatically change CallStack::levels to min(CallStack::levels.)
@@ -159,6 +166,27 @@ namespace mlinsight {
         }
         return os.str();
     }
+
+    inline std::string getProcessName(ssize_t pid) {
+        std::string procName;
+        std::ifstream ifs;
+        std::stringstream ss;
+        ss<<"/proc/"<<pid<<"/comm";
+        ifs.open(ss.str());
+        ifs >> procName;
+        ifs.close();
+        return std::move(procName);
+    }
+
+    inline bool isPythonAvailable(){
+        return dlsym(RTLD_DEFAULT, "Py_IsInitialized") != nullptr;
+    }
+
+#ifdef CUDA_ENABLED
+
+#endif
+
+
 }
 
 

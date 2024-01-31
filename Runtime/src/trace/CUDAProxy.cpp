@@ -31,7 +31,7 @@ namespace mlinsight {
         //INFO_LOGS("CUDA Driver API dlsym: %s", symbol);
         #include <cuda_runtime.h>
         #include <cuda_runtime_api.h>
-        #ifdef CUDA_VERSION_121_LATER
+        #if CUDART_VERSION > 12010
             CUdriverProcAddressQueryResult driverStatus;
             CUresult cudaResult = cuGetProcAddress(symbol, pfn, cudaVersion, flags, &driverStatus); 
         #else
@@ -61,7 +61,7 @@ namespace mlinsight {
             }
             void *retAddr = nullptr;
             if (!instance->installDlSym(*pfn, retAddr)) {
-                INFO_LOGS("CUDA API NOT hooked: name:%s bind:%zd type:%zd addr:%p",symbol,bind,type,*pfn);
+                INFO_LOGS("CUDA API NOT hooked: name:%s bind:%u type:%d addr:%p",symbol,bind,type,*pfn);
                 ERR_LOGS("Failed to hook %s because of installation failure", symbol);
             } else {
                 //INFO_LOGS("Install the hook on %s", symbol);
@@ -86,7 +86,7 @@ namespace mlinsight {
         //pthread_mutex_lock(&pytorchMemoryManagementLock);
         CUresult ret = cuMemAlloc(dptr, bytesize);
         
-        //cout << "cuMemAlloc malloc " << bytesize << "." << endl; 
+        //OUTPUTS("cuMemAlloc malloc %d.\n",bytesize);
        // INFO_LOGS("cuMemAlloc malloc %zd bytes ptr %p", bytesize, dptr);
         if (ret == CUDA_SUCCESS) {
             trackDriverAllocation(bytesize, (void *)*dptr);
@@ -188,7 +188,7 @@ namespace mlinsight {
 
     CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags){
         CUresult rlt = cuMemMap(ptr,size,offset,handle,flags);
-        INFO_LOGS("cuMemMap malloc %zd bytes ptr %p", size, ptr);
+        INFO_LOGS("cuMemMap malloc %zd bytes ptr %p", size, (void*)ptr);
         return rlt;
     }
 

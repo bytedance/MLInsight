@@ -26,8 +26,10 @@
 #include "analyse/SerializationDataStructure.h"
 #include "analyse/LogicalClock.h"
 #include "trace/proxy/PytorchMemProxy.h"
+#include "common/CUDAHelper.h"
 
 #ifdef USE_TORCH
+#include "common/DependencyLibVersionSpecifier.h"
 #include "trace/proxy/PytorchMemProxy.h"
 #endif
 
@@ -38,6 +40,7 @@
 
 #ifdef CUDA_ENABLED
 #include "trace/proxy/CUDAProxy.h"
+#include <c++/11/cxxabi.h>
 #endif
 
 
@@ -45,8 +48,7 @@ namespace mlinsight {
     bool installed = false;
 
     bool HookInstaller::install() {
-
-        //DBG_LOG("*******HookInstaller::install*****");
+        DBG_LOG("*******HookInstaller::install*****");
 
         createRecordingFolder();
 
@@ -59,7 +61,8 @@ namespace mlinsight {
 
         initLogicalClock(curContext->cachedWallClockSnapshot, curContext->cachedLogicalClock,
                          curContext->cachedThreadNum);
-        
+        __cxxabiv1::__cxa_atexit([](void*)->void {saveData(curContext);},NULL,NULL);
+        //Register datasaver hook
         return installAPI();
     }
 
@@ -176,12 +179,12 @@ namespace mlinsight {
                 {"cuMemAllocManaged",(void*)cuMemAllocManaged_proxy},
                 {"pthread_create",(void*)pthread_create_proxy},
                 {"cuMemHostUnregister",(void*)cuMemHostUnregister_proxy},
-            #ifdef CUDA_VERSION_121_LATER
+            #if CUDART_VERSION > 12010
                 {"cuMemCreate",(void *)cuMemCreate_proxy},
                 {"cuMemMap",(void *)cuMemMap_proxy},
             #endif
 			#ifdef USE_TORCH
-              #ifndef TORCH_VERSION_20_LATER
+              #if TORCH_VERSION_MAJOR >= 2
                 {"setMemoryFraction",(void*)setMemoryFraction_proxy},
                 {"_ZN3c104cuda20CUDACachingAllocator3getEv",(void*)allocator_get_proxy,(void**)&realAllocatorGetPtr},
                 {"_ZN3c104cuda20CUDACachingAllocator10raw_deleteEPv",(void*)raw_delete_proxy,(void**)&realRawDeletePtr},
@@ -312,9 +315,9 @@ namespace mlinsight {
                 // newSym->realAddrPtr will be filled at installation time
             }
 
-            //fprintf(stderr, "%s,%ld,%ld\n", funcName, newSym->fileId, newSym->symIdInFile);
+            //DBG_LOGS("%s,%ld,%ld\n", funcName, newSym->fileId, newSym->symIdInFile);
             //Write this symbol to symbol file            
-            fprintf(symInfoFile, "%s,%ld,%ld\n", funcName, newSym.fileId, newSym.symIdInFile);
+            //fprintf(symInfoFile, "%s,%ld,%ld\n", funcName, newSym.fileId, newSym.symIdInFile);
 
             validRelaEntrySize+=1;
             //INFO_LOGS(
@@ -344,17 +347,17 @@ namespace mlinsight {
         //INFO_LOGS("gotSec %p-%p",gotSec.startAddr, gotSec.startAddr + gotSec.allocatedSize);
         
         if (pltSecureSection.startAddr) {
-//            DBG_LOGS("Adjusting mem permission from:%p to:%p", pltSecureSection.internalArray,
-//                     pltSecureSection.internalArray + pltSecureSection.allocatedSize);
+            // DBG_LOGS("Adjusting mem permission from:%p to:%p", pltSecureSection.internalArray,
+            //         pltSecureSection.internalArray + pltSecureSection.allocatedSize);
             adjustMemPerm(pltSecureSection.startAddr, pltSecureSection.startAddr + pltSecureSection.size,
                           PROT_READ | PROT_WRITE | PROT_EXEC);
         }
-        std::stringstream ss;
-        ss << mlinsight::HookInstaller::instance->folderName << "/symbolInfo.txt";
-        FILE *symInfoFile = fopen(ss.str().c_str(), "a");
-        if (!symInfoFile) {
-            fatalErrorS("Cannot open %s because:%s", ss.str().c_str(), strerror(errno))
-        }
+        // std::stringstream ss;
+        // ss << mlinsight::HookInstaller::instance->folderName << "/symbolInfo.txt";
+        FILE *symInfoFile = NULL; //fopen(ss.str().c_str(), "a");
+        // if (!symInfoFile) {
+        //     fatalErrorS("Cannot open %s because:%s", ss.str().c_str(), strerror(errno))
+        // }
 
         //INFO_LOGS("parser.pltEntrySize=%zd",pltSection.allocatedSize / pltSection.entrySize);
         //INFO_LOGS("parser.relaPLTEntrySize=%zd",parser.relaPLTEntrySize);
@@ -380,7 +383,7 @@ namespace mlinsight {
         }
         validRelaDynSize+=validRelaDYNEntrySize;
 
-        fclose(symInfoFile);
+        //fclose(symInfoFile);
         return true;
     }
 
@@ -599,6 +602,9 @@ namespace mlinsight {
             elfImgInfoMap.pushBack();
         }
 
+        //print_stacktrace();
+        //print_pystacktrace();
+
         //Get segment info from /proc/self/maps
         for (ssize_t fileId = 0; fileId < newFileEntryId.getSize(); ++fileId) {
             FileID globalFileId = newFileEntryId[fileId];
@@ -796,10 +802,11 @@ namespace mlinsight {
 
     void HookInstaller::createRecordingFolder() const {
         //sprintf(folderName, "mlinsightdata_%lu", getunixtimestampms());
-        if (mkdir(folderName.c_str(), 0755) == -1) {
-            fatalErrorS("Cannot mkdir ./%s because: %s", folderName.c_str(),
-                        strerror(errno));
-        }
+        //The timing code is blocked so there is no need to create recording folder
+        //if (mkdir(folderName.c_str(), 0755) == -1) {
+        //    fatalErrorS("Cannot mkdir ./%s because: %s", folderName.c_str(),
+        //                strerror(errno));
+        //}
     }
 
     /**

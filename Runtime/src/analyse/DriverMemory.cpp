@@ -16,6 +16,7 @@
 #include "common/Tool.h"
 #include "analyse/DriverMemory.h"
 #ifdef USE_TORCH
+#include "common/DependencyLibVersionSpecifier.h"
 #include "analyse/PytorchMemory.h"
 #endif
 using namespace std;
@@ -26,17 +27,17 @@ namespace mlinsight {
 
     void updateTotalMemory(void) {
         size_t freeMem, totalMem;
-        CUresult result = cuMemGetInfo(&freeMem, &totalMem);
+        cudaError_t result = cudaMemGetInfo(&freeMem, &totalMem);
 
         if (result != CUDA_SUCCESS) {
-            ERR_LOG("MLInsight cannot invoke cuMemGetInfo, exiting now!!");
+            ERR_LOG("MLInsight cannot invoke cudaMemGetInfo, exiting now!!");
             return;
         }
         if (memory.totalMemory != totalMem) {
             memory.totalMemory = totalMem;
         }
 
-        cout << "updateTotalMemory, current usage - " << format_size(totalMem - freeMem) << endl;
+        OUTPUTS("updateTotalMemory, current usage - %s\n",format_size(totalMem - freeMem).c_str());
         ssize_t curUsage = totalMem - freeMem;
         memory.total.curUsage = curUsage;
         if (curUsage > memory.total.peakUsage) {
@@ -49,7 +50,7 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
         memory.driver.basic.curUsage += size;
 
         if (memory.driver.basic.curUsage > memory.driver.basic.peakUsage) {
-            //printf("Detecting allocation curUsage - %lx, peakUsage - %lx\n", memory.driver.basic.curUsage, memory.driver.basic.peakUsage);
+            DBG_LOGS("Detecting allocation curUsage - %lx, peakUsage - %lx\n", memory.driver.basic.curUsage, memory.driver.basic.peakUsage);
             memory.driver.basic.peakUsage = memory.driver.basic.curUsage;
         }
 
@@ -60,7 +61,10 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
         memory.driver.alloc.memAliveObjs += size;
         memory.driver.alloc.numAliveObjs += 1;
 
-        cout << "Detecting driver curUsage - " << format_size(memory.driver.basic.curUsage) << ". peakUsage - " << format_size(memory.driver.basic.peakUsage) << ". Alive objects - " << memory.driver.alloc.numAliveObjs << endl;;
+        DBG_LOGS("Detecting driver curUsage - %s. peakUsage - %s. Alive objects - %zd",
+                format_size(memory.driver.basic.curUsage).c_str(),
+                format_size(memory.driver.basic.peakUsage).c_str(),
+                memory.driver.alloc.numAliveObjs);
         // Getting the callstacks of this allocation
 
         // Insert the current object into the hash map
@@ -71,14 +75,14 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
 
     void updateDriverMemoryOnFree(void *devicePtr) {
         if (devicePtr == NULL) {
-            //fprintf(stderr, "wrong devicePtr %p\n", devicePtr);
+            //DBG_LOGS( "wrong devicePtr %p", devicePtr);
             //mlinsight::print_stacktrace();
             return;
         }
     
         // Finding the entry in the hash map
         if(memory.driver.alloc.mapAliveObjs.count(devicePtr) == 0) {
-            fprintf(stderr, "Free pointer %p not existing, but it points to %p!!!\n", devicePtr, *((void **)devicePtr));
+            ERR_LOGS("Free pointer %p not existing, but it points to %p!!!", devicePtr, *((void **)devicePtr));
             exit(-1);
         }
 
@@ -108,7 +112,7 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
         // Delete the current object from the hash map
         memory.driver.alloc.mapAliveObjs.erase(devicePtr);
         delete object; 
-        //printf("total objects in the map - %d\n", memory.driver.alloc.mapAliveObjs.getEntryNumber());
+        //DBG_LOGS("total objects in the map - %d\n", memory.driver.alloc.mapAliveObjs.getEntryNumber());
     }
 
     bool isPytorchAllocation(CallStack<void*, CPP_CALL_STACK_LEVEL>& callstackObject) {
@@ -126,7 +130,7 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
     // pytroch allocator (if possible)'s information correspondingly.
     void trackDriverAllocation(ssize_t size, void *devicePtr) {
 
-        //cout << "trackDriverAllocation size - " << size << ", devicePtr " << devicePtr << endl;
+        //OUTPUTS("trackDriverAllocation size - %d, devicePtr %p\n",size,devicePtr);
         if (devicePtr == nullptr) {
             return;
         }
@@ -238,12 +242,11 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
         }
     }
 
-    cout << objectsNum << " driver objects include " << callstackNum << " callstacks, " << replicNum << " replicating callstacks, " 
-           << "and the maximum waste " << format_size(maxWaste) << "!!!" << endl;
-    
-    cout << endl; 
+    //Please do not use cout or printf as it may cause program crash. Use macro to output the files into a file.
+    OUTPUTS("%d driver objects include %d callstacks, %d replicating callstacks, and the maximum waste %s !!!\n",
+            objectsNum,callstackNum, replicNum,format_size(maxWaste).c_str());
 
-    output << objectsNum << " driver objects include " << callstackNum << " callstacks, " << replicNum << " replicating callstacks, " 
+    output << objectsNum << " driver objects include " << callstackNum << " callstacks, " << replicNum << " replicating callstacks, "
            << "and the maximum waste " << format_size(maxWaste) << "!!!" << endl;
 
     output << endl;
@@ -254,12 +257,12 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
         PotentialLeakOject* object = it->second; 
         leakyObjects.push_back({object->aliveMem, it->first});
         if(leakyObjsMap.count(it->first) == 0) {
-            const CallStack<void*, CPP_CALL_STACK_LEVEL> * cs = it->first; 
-            fprintf(stderr, "Error: aliveMem %lx size %lx (%p - %p) not existing in leakyObjsMap\n", object->aliveMem, object->size, cs->array[3], cs->array[4]);
+            const CallStack<void*, CPP_CALL_STACK_LEVEL> * cs = it->first;
+            ERR_LOGS("aliveMem %lx size %lx (%p - %p) not existing in leakyObjsMap\n", object->aliveMem, object->size, cs->array[3], cs->array[4]);
         }
     }
 
-    //fprintf(stderr, "leakobject size %d\n", leakyObjects.size());
+    //INFO_LOGS("leakobject size %d\n", leakyObjects.size());
     // Sort the vector based on object size (you can customize the sorting order)
     std::sort(leakyObjects.begin(), leakyObjects.end(),
         [](const std::pair<size_t, CallStack<void*, CPP_CALL_STACK_LEVEL>*>& a, const std::pair<size_t, CallStack<void*, CPP_CALL_STACK_LEVEL>*>& b) {
@@ -277,8 +280,7 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
 
         const CallStack<void*, CPP_CALL_STACK_LEVEL> * cs = it.second;
         output << i << "-th driver object: waste - " << format_size(leakObject->aliveMem) << ", alloc times: " << leakObject->aliveCount
-               << ", unit size - "
-               << format_size(leakObject->size) << ", callsite level: " << cs->levels << endl;
+               << ", unit size - " << format_size(leakObject->size) << ", callsite level: " << cs->levels << endl;
        
         char **strings;
         strings = backtrace_symbols(cs->array, cs->levels);
@@ -298,50 +300,74 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
     }
 
     void reportMemoryProfile(ssize_t oomAllocSize) {
-        size_t freeMem, totalMem;
-
-        CUresult result = cuMemGetInfo(&freeMem, &totalMem);
-        if (result != CUDA_SUCCESS) {
-            ERR_LOG("MLInsight cannot invoke cuMemGetInfo, exiting now!!");
+#ifndef CUDA_ENABLED
+        OUTPUT("This version of MLInsight does not compile with CUDA, so MLInsight will not report memory profile information.\n")
+        return;
+#endif
+        if(not isPythonAvailable()){
+            OUTPUT("MLInsight detects that this process is not python process, So MLInsight will not report memory profile information.\n");
             return;
         }
 
+        size_t freeMem=0;
+        ssize_t totalMem=0;
+//        cudaMemGetInfo(&freeMem, &totalMem);
+//        if (result != CUDA_SUCCESS) {
+//            ERR_LOG("MLInsight cannot invoke cuMemGetInfo, exiting now!!");
+//            return;
+//        }
         if(memory.totalMemory == 0) {
             memory.totalMemory = totalMem;
         }
-        
-        // Create a file using the process id.
-        std::string fileName = "memoryprofile_" + std::to_string(getpid()) + ".txt";
-        std::ofstream output(fileName, std::ios::app);
 
-        printf("oomAllocSize %lx!!!!\n", oomAllocSize);
+        // Save memoryprofile file to debug folder
+        // Create a file using the process id.
+        // std::string fileName = logProcessRootPath + "/memoryprofile.txt";
+        // std::ofstream output(fileName, std::ios::app);
+        // saveMemoryProfileFile(output, oomAllocSize,totalMem,freeMem);
+        // output.close();
+
+        // Save the memoryprofile file to local folder
+        if(memory.driver.alloc.numAllocs > 0){
+            stringstream ss;
+            ss<< "memoryprofile_" << getenv("MLINSIGHT_LOGROOT_PID")<<"_" <<getpid() << ".txt";
+            std::string logFileName =ss.str();
+            std::ofstream outputForUser(logFileName, std::ios::app);
+            //INFO_LOGS("MLInsight saved memoryprofile data to %s",logFileName.c_str());
+            saveMemoryProfileFile(outputForUser, oomAllocSize, totalMem, freeMem);
+            outputForUser.close();
+        }
+    }
+
+    void saveMemoryProfileFile(std::ofstream &output, ssize_t oomAllocSize, ssize_t totalMem, ssize_t freeMem){
+        DBG_LOGS("oomAllocSize %lx!!!!\n", oomAllocSize);
 
         // If size is given, there is an OOM failure when trying to allocate the given size
         if(oomAllocSize != 0) {
             output << endl;
             output << "OOM error when allocating " << format_size(oomAllocSize) << " at the following callsite: " << endl;
-        #ifdef USE_TORCH
-            TorchObject current; 
+#ifdef USE_TORCH
+            TorchObject current;
             current.updatePythonCallStack();
             printPythonCallstack(output, current.callstack);
-        #endif
+#endif
 
             if (oomAllocSize >= totalMem) {
-                output << endl << "GPU capacity is " << format_size(totalMem) << ", which is less than the requested size - " << format_size(oomAllocSize) << endl; 
-                output << "That is, this OOM is due to GPU capacity. Please use a larger GPU or adjust parameters like token number or batch size!!" << endl; 
+                output << endl << "GPU capacity is " << format_size(totalMem) << ", which is less than the requested size - " << format_size(oomAllocSize) << endl;
+                output << "That is, this OOM is due to GPU capacity. Please use a larger GPU or adjust parameters like token number or batch size!!" << endl;
             }
             else if(oomAllocSize >= freeMem) {
                 output << "Allocation size - " << format_size(oomAllocSize) << " is larger than available GPU memory - " << format_size(freeMem) << endl;
-            #ifdef USE_TORCH    
+#ifdef USE_TORCH
                 if(oomAllocSize < (torchMem.alloc.memAliveObjs + freeMem)) {
                     output << "The problem is caused by external fragmentation of PyTorch allocator, which may "
-                        << "be able to be fixed by invoking torch.cuda.empty_cache()!" << endl;
+                           << "be able to be fixed by invoking torch.cuda.empty_cache()!" << endl;
                 }
 
                 if(oomAllocSize < torchMem.internalFrag) {
-                    output << "One major issue is caused by the internal fragmentation intorduced by PyTorch allocator." << endl; 
+                    output << "One major issue is caused by the internal fragmentation intorduced by PyTorch allocator." << endl;
                 }
-            #endif
+#endif
             }
         }
 
@@ -355,26 +381,16 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
             output << "General GPU information: total " << format_size(memory.totalMemory) << ". Current usage - "
                    << format_size(memory.total.curUsage) << ". Peak usage - " << format_size(memory.total.peakUsage)
                    << endl;
-            cout << "General GPU information: total " << format_size(memory.totalMemory) << ". Current usage - "
-                 << format_size(memory.total.curUsage) << ". Peak usage - " << format_size(memory.total.peakUsage)
-                 << endl;
         } else {
             output << "General GPU information: total " << format_size(totalMem) << ". Current usage - "
                    << format_size(memory.total.curUsage) << ". Peak usage - " << format_size(memory.total.peakUsage)
                    << endl;
-            cout << "General GPU information: total " << format_size(memory.totalMemory) << ". Current usage - "
-                 << format_size(memory.total.curUsage) << ". Peak usage - " << format_size(memory.total.peakUsage)
-                 << endl;
         }
         output << endl;
 
         // Printing the driver information
         output << "Driver GPU information: current usage - " << format_size(memory.driver.basic.curUsage)
                << ". Peak usage - " << format_size(memory.driver.basic.peakUsage) << endl;
-
-
-        cout << "Driver GPU information: current usage - " << format_size(memory.driver.basic.curUsage)
-             << ". Peak usage - " << format_size(memory.driver.basic.peakUsage) << endl;
 
         output << "\t Within current memory, normal driver - " << format_size(memory.driver.aliveNormalMemory)
                << ". Pytorch - " << format_size(memory.driver.alivePytorchMemory) << endl;
@@ -388,8 +404,8 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
         output << "\t Memory of alive objects: " << format_size(memory.driver.alloc.memAliveObjs) << endl;
 
         printDriverObjects(output);
-    #ifdef USE_TORCH
+#ifdef USE_TORCH
         printPytorchMemoryProfile(output);
-    #endif
+#endif
     }
 }

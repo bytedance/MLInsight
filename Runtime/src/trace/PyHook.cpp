@@ -335,7 +335,7 @@ namespace mlinsight {
 
 #if 0 //Block Timing code
         RecTuple *curRecTuple = nullptr;
-        if (previousFrame) {
+        if (e) {
             PyCodeExtra *prevCodeExtra = getPyCodeExtra(previousFrame);
             //Check if the current module is a new module or not. We can check this by requesting code extra
             PyCodeExtra *curCodeExtra = getPyCodeExtra(f);
@@ -373,17 +373,23 @@ namespace mlinsight {
 
 
     bool installPythonInterceptor(){
-
-        Py_Initialize();
-
-        getCodeExtraIndex();
-
         pyCodeExtraHeap=new ObjectPoolHeap<PyCodeExtra>();
         fileNameFileIdMap=new std::map<std::string,FileID>();
+        if(isPythonAvailable()) {
+            INFO_LOG("Python is available");
+            if (Py_IsInitialized() == 0) {
+                INFO_LOG("*******Python interpreter not initialized*******");
+                Py_Initialize();
+            }
+            getCodeExtraIndex();
 
-        installPyFrameInterceptor(pyPreHookAttribution, pyPostHookAttribution);
 
-        INFO_LOG("*******Installing python interpreter done*******");
+            installPyFrameInterceptor(pyPreHookAttribution, pyPostHookAttribution);
+
+            INFO_LOG("*******Installing python interpreter done*******");
+        }else {
+            INFO_LOG("Python is not available");
+        }
         return true;
     }
 

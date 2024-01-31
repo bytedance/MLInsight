@@ -29,7 +29,7 @@ CUresult cuMemAddressFree_proxy ( CUdeviceptr ptr, size_t size );
 CUresult cuMemHostUnregister_proxy ( void* ptr );
 CUresult cuMemUnmap_proxy ( CUdeviceptr ptr, size_t size );
 
-#ifdef CUDA_VERSION_121_LATER
+#if CUDART_VERSION > 12010
 CUresult cuMemCreate_proxy(CUmemGenericAllocationHandle *handle, size_t size, const CUmemAllocationProp *prop, unsigned long long flags);
 CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags);
 

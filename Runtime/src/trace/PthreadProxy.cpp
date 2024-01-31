@@ -64,8 +64,8 @@ void *dummy_thread_function(void *data) {
      * Perform required actions after each thread function completes
      */
 //    curContextPtr->endTImestamp = getunixtimestampms();
-    //printf("inside the end of thread!!\n");
-    exitHandler(curContextPtr);
+    //DBG_LOG("inside the end of thread!!\n");
+    saveData(curContextPtr);
     return threadFuncRet;
 }
 

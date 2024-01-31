@@ -21,6 +21,8 @@
 #include "analyse/PytorchMemory.h"
 #include "analyse/DriverMemory.h"
 #include "trace/hook/PyHook.h"
+#include "common/DependencyLibVersionSpecifier.h"
+#include "common/CUDAHelper.h"
 
 
 using namespace std;
@@ -82,7 +84,7 @@ void trackTorchCudaMalloc(void * devicePtr, ssize_t size) {
         torchMem.requestSizeAtMaxExternalFrag = size; 
     }
 
-    //fprintf(stderr, "trackTorchCudaMalloc: cudaMalloc ptr %p size %lx\n", devicePtr, size);
+    //INFO_LOGS(stderr, "trackTorchCudaMalloc: cudaMalloc ptr %p size %lx\n", devicePtr, size);
     // Recording the block information
     torchMem.countCudaMallocs += 1; 
     torchMem.numFreedObjects += 1; 
@@ -94,7 +96,7 @@ void trackTorchCudaMalloc(void * devicePtr, ssize_t size) {
         torchMem.memFreedSmallObjects += size; 
     }
 
-    //fprintf(stderr, "trackTorchCudaMalloc: adding devicePtr %p size %lx to torchMem.mapFreeObjs\n", devicePtr, size);
+    //INFO_LOGS(stderr, "trackTorchCudaMalloc: adding devicePtr %p size %lx to torchMem.mapFreeObjs\n", devicePtr, size);
  
     // This is a new allocated block, adding this block into the mapFreeObjs
     // We will use devicePtr as the key, as it can be used to get the object quickly later
@@ -102,7 +104,7 @@ void trackTorchCudaMalloc(void * devicePtr, ssize_t size) {
 }
 
 void checkReadyForErase(TorchObject * object, void * ptr) {
-    //printf("object %p size %lx ptr %p initSize %lx\n", object->ptr, object->size, ptr, object->initSize);
+    //INFO_LOGS("object %p size %lx ptr %p initSize %lx\n", object->ptr, object->size, ptr, object->initSize);
     assert(object->size == object->initSize);
     assert(object->ptr == ptr);
     assert(object->prev == nullptr && object->next == nullptr);
@@ -126,7 +128,7 @@ void trackTorchCudaFree(void * ptr, ssize_t size) {
     // Remove this object from mapFreeObjs
     // TODO: check all blocks inside the original block 
     if(torchMem.mapFreeObjs.count(ptr) == 0) {
-        fprintf(stderr, "ptr is not existing in mapFreeObjs!\n"); 
+        INFO_LOG("ptr is not existing in mapFreeObjs!\n");
         assert(ptr == NULL); // Ugly, just force it to stop now
     }
 
@@ -147,14 +149,14 @@ void trackTorchCudaFree(void * ptr, ssize_t size) {
         torchMem.numFreedObjects -=1; 
     }
 
-    //printf("checkFree ptr %p size %lx\n", ptr, size);
+    INFO_LOGS("checkFree ptr %p size %lx\n", ptr, size);
     checkReadyForErase(object, ptr); 
 
     torchMem.mapFreeObjs.erase(ptr);
 }
 
 // Currently, this function is not used, which may be able to use it in the future.
-#ifdef TORCH_VERSION_20_LATER 
+#if TORCH_VERSION_MAJOR >= 2
 void processCUDAOOMError(const c10::OutOfMemoryError&, ssize_t allocationSize)
 #else
 void processCUDAOOMError(const c10::CUDAOutOfMemoryError&, ssize_t allocationSize)
@@ -172,8 +174,8 @@ void processCUDAOOMError(const c10::CUDAOutOfMemoryError&, ssize_t allocationSiz
 void trackPytorchAllocation(ssize_t size, void * ptr) {
     if(ptr == nullptr)
         return;
-    
-    //fprintf(stderr, "trackPytorchAllocation ptr %p size %lx\n", ptr, size);
+
+    INFO_LOGS("trackPytorchAllocation ptr %p size %lx\n", ptr, size);
 
     // Update the torch's allocation information
     torchMem.alloc.numAllocs += 1;
@@ -181,13 +183,13 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
 
     // Update the information relate to the current object
     if(torchMem.mapFreeObjs.count(ptr) == 0) {
-        fprintf(stderr, "Error: torchallocation ptr %p with size %lx, NOT in the freeobjects\n", ptr, size);
+        INFO_LOGS("Error: torchallocation ptr %p with size %lx, NOT in the freeobjects\n", ptr, size);
         assert(ptr == nullptr);
     }
 
     TorchObject * current = torchMem.mapFreeObjs[ptr];
- 
-    //fprintf(stderr, "torchallocation ptr %p with size %lx before merging, current ptr %p size %lx\n", ptr, size, current->ptr, current->size);
+
+    INFO_LOGS("torchallocation ptr %p with size %lx before merging, current ptr %p size %lx\n", ptr, size, current->ptr, current->size);
 
     // Check whether we need to merge objects together
     /* If current->size == size, then no need to check. 
@@ -230,7 +232,7 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
         // Keep merging freed objects
         TorchObject * next = current->next;
         if(next == nullptr) {
-            fprintf(stderr, "In checking merge, next is invalid!!");
+            INFO_LOG("In checking merge, next is invalid!!");
             assert(next != nullptr);
         }
 
@@ -238,10 +240,10 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
         current->next = next->next;
 
         if(current == next) {
-            fprintf(stderr, "current %p current->ptr %p, but erase next %p next->ptr %p\n", current, current->ptr, next, next->ptr);
+            DBG_LOGS("current %p current->ptr %p, but erase next %p next->ptr %p\n", current, current->ptr, next, next->ptr);
             assert(current != next); 
         }
-    //    fprintf(stderr, "current %p current->ptr %p, but erase next %p next->ptr %p\n", current, current->ptr, next, next->ptr);
+    //    DBG_LOGS("current %p current->ptr %p, but erase next %p next->ptr %p", current, current->ptr, next, next->ptr);
 
         torchMem.mapFreeObjs.erase(next->ptr); 
         delete next; 
@@ -256,7 +258,7 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
 
         TorchObject * remaining = new TorchObject(current->initSize, current->size - blockSize);
         if(remaining == nullptr) {
-            fprintf(stderr, "Out of CPU memory now. Exit!!!");
+            DBG_LOG("Out of CPU memory now. Exit!!!");
             exit(-1); 
         }
 
@@ -312,7 +314,7 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
     torchMem.mapFreeObjs.erase(ptr);
     torchMem.alloc.mapAliveObjs[ptr] = current;
     if (ptr != current->ptr) {
-        fprintf(stderr, "Error: trackPytorchAllocation ptr %p current->ptr %p size %lx\n", ptr, current->ptr, size);
+        ERR_LOGS("trackPytorchAllocation ptr %p current->ptr %p size %lx\n", ptr, current->ptr, size);
     }
 }
 
@@ -321,24 +323,24 @@ void trackPytorchFree(void * ptr) {
     if(ptr == nullptr)
         return;
 
-    //fprintf(stderr, "Free: ptr %p\n", ptr);
+    //DBG_LOG("Free: ptr %p", ptr);
 
     // Finding the entry in the hash map
     if(torchMem.alloc.mapAliveObjs.count(ptr) == 0) {
-        fprintf(stderr, "ERROR: tracking trackPytorchFree failed, where the pointer (%p) is not in the freeobjects\n", ptr);
+        ERR_LOGS("ERROR: tracking trackPytorchFree failed, where the pointer (%p) is not in the freeobjects\n", ptr);
         assert(ptr == NULL); // UGLY, but reporting an issue
     }
 
     TorchObject * current = torchMem.alloc.mapAliveObjs[ptr];
     // Sanity check
     if(ptr != current->ptr) {
-        fprintf(stderr, "ERROR: trackPytorchFree failure, where the free pointer (%p) is not same as the pointer (%p) size %lx in block\n", ptr, current->ptr, current->size);
+        ERR_LOGS("trackPytorchFree failure, where the free pointer (%p) is not same as the pointer (%p) size %lx in block\n", ptr, current->ptr, current->size);
         assert(ptr == current->ptr); 
     }
     
     size_t curSize = current->size; 
 
-    //fprintf(stderr, "[%ld] trackPytorchFree: ptr %p ~ %p size %lx initSize %lx\n", pthread_self(), ptr, static_cast<char*>(ptr) + current->size, current->size, current->initSize);    
+    //DBG_LOGS("[%ld] trackPytorchFree: ptr %p ~ %p size %lx initSize %lx", pthread_self(), ptr, static_cast<char*>(ptr) + current->size, current->size, current->initSize);
     // Now updating the allocations information, which will also record 
     // the devicePtr to the allocated one. 
     torchMem.alloc.numFrees += 1;
@@ -448,15 +450,13 @@ void printLeakyTorchObjects(std::ofstream &output) {
         }
     }
 
-    cout << "In the total of " << objectsNum << " objects, there are " << callstackNum << " callstacks, " << replicNum << " replicating callstacks, " 
-           << "and the maximum waste " << format_size(maxWaste) << "!!!" << endl;
-    
-    cout << endl; 
+    //Please do not use cout or printf here and use macro OUTPUT/OUTPUTS to output files into the disk.
+    OUTPUTS("In the total of %d objects, there are %d callstacks, %d replicating callstacks, and the maximum waste %s !!!\n",
+            objectsNum, callstackNum, replicNum, format_size(maxWaste).c_str());
 
-    output << objectsNum << " Pytorch alive objects include " << callstackNum << " callstacks, " << replicNum << " replicating callstacks, " 
-           << "and the maximum waste " << format_size(maxWaste) << "!!!" << endl;
+    OUTPUTS("%d Pytorch alive objects include %d callstacks, %d replicating callstacks, and the maximum waste %s !!!\n",
+            objectsNum,callstackNum,replicNum,format_size(maxWaste).c_str());
 
-    output << endl;
 
     std::vector<std::pair<size_t, CallStack<PyCallStack, PYTHON_CALL_STACK_LEVEL> *> > leakyObjects; 
 
@@ -465,7 +465,7 @@ void printLeakyTorchObjects(std::ofstream &output) {
         leakyObjects.push_back({object->aliveMem, it->first});
     }
 
-    //fprintf(stderr, "leakobject size %d\n", leakyObjects.size());
+    //DBG_LOGS("leakobject size %d\n", leakyObjects.size());
     // Sort the vector based on object size (you can customize the sorting order)
     std::sort(leakyObjects.begin(), leakyObjects.end(),
         [](const std::pair<size_t, CallStack<PyCallStack, PYTHON_CALL_STACK_LEVEL>*>& a, const std::pair<size_t, CallStack<PyCallStack, PYTHON_CALL_STACK_LEVEL>*>& b) {
@@ -488,15 +488,14 @@ void printLeakyTorchObjects(std::ofstream &output) {
         i++; 
     }
 
-    //fprintf(stderr, "We finished the printing of python leaky objects\n");
+    //DBG_LOG("We finished the printing of python leaky objects");
 }
 
 void printPytorchMemoryProfile(std::ofstream & output) {
+
     output << endl;
     // Printing the pytorch information
     output << "Pytorch GPU information: current reserve  - " << format_size(torchMem.basic.curUsage) << ". Peak reserve - " << format_size(torchMem.basic.peakUsage) << endl;
-    cout << "Pytorch GPU information: current reserve  - " << format_size(torchMem.basic.curUsage) << ". Peak reserve - " << format_size(torchMem.basic.peakUsage) << endl;
-
     output << "\t Number of cudaMalloc: " << torchMem.countCudaMallocs << endl;
     output << "\t Number of cudaFree: " << torchMem.countCudaFrees << endl;
     output << "\t Number of allocations: " << torchMem.alloc.numAllocs << endl;

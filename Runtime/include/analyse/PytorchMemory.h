@@ -89,7 +89,7 @@ public:
         }
         callstack.levels=i;
 
-        //fprintf(stderr, "Collecting callstacks with level %d\n", callstack.levels);
+        //INFO_LOGS("Collecting callstacks with level %d\n", callstack.levels);
         //Release GIL
         PyGILState_Release(gstate);
         //Perform a test print
@@ -145,7 +145,7 @@ void printLeakyTorchObjects(std::ofstream &output);
 
 
 ssize_t getInternalFragment(void * ptr, ssize_t size);
-#ifdef TORCH_VERSION_20_LATER
+#if TORCH_VERSION_MAJOR >= 2
 void processCUDAOOMError(const c10::OutOfMemoryError&, ssize_t allocationSize);
 #else
 void processCUDAOOMError(const c10::CUDAOutOfMemoryError&, ssize_t allocationSize);

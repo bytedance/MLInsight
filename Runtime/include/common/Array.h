@@ -261,7 +261,7 @@ namespace mlinsight {
 
             internalArray = (T *) malloc(newSize * sizeof(T));
             if(!internalArray){
-                fprintf(stderr,"Cannot allocateArray memory");
+                INFO_LOG("Cannot allocateArray memory");
                 exit(-1);
                 return false;
             }

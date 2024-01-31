@@ -11,6 +11,7 @@ include(GNUInstallDirs)
 set(COMPILATION_FLAGS "-O3" "-g")
 # https://json.nlohmann.me/integration/cmake/
 
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 
 if (USE_TORCH)
    add_definitions(-DUSE_TORCH)
@@ -19,7 +20,7 @@ if (USE_TORCH)
     src/analyse/PytorchMemory.cpp
    )
    execute_process(
-    COMMAND "python3" -c "import os;import torch; print(''.join([os.path.dirname(torch.__file__),os.sep,'include']))"
+    COMMAND "${Python3_EXECUTABLE}" -c "import os;import torch; print(''.join([os.path.dirname(torch.__file__),os.sep,'include']))"
     OUTPUT_VARIABLE PYTORCH_INCLUDE_DIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
    )
@@ -37,18 +38,19 @@ set(HookSrc
         src/common/ProcInfoParser.cpp
         src/common/ElfParser.cpp
         src/common/Tool.cpp
+        src/common/Logging.cpp
         src/trace/SystemProxy.cpp
         src/trace/PthreadProxy.cpp
         src/trace/APIHookHandlers.cpp
         src/trace/DLProxy.cpp
         src/trace/LibcProxy.cpp 
         src/trace/CUDAProxy.cpp  
-        src/analyse/DriverMemory.cpp 
-    	)
+        src/analyse/DriverMemory.cpp
+        include/common/DependencyLibVersionSpecifier.h
+        include/common/CUDAHelper.h
+        src/common/Logging.cpp
+)
 
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-message(STATUS "Python Version: ${Python3_EXECUTABLE}")
-message(STATUS "Python Include Path: ${Python3_INCLUDE_DIRS}")
 
  #If cuda not found. Try to change this variable by adding -D CUDAToolkit_ROOT=<cuda toolkiet root>
 if(EXISTS "/usr/local/cuda")

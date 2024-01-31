@@ -11,11 +11,12 @@
 #include "trace/proxy/PytorchMemProxy.h"
 #include "analyse/PytorchMemory.h"
 #include "analyse/DriverMemory.h"
+#include "common/DependencyLibVersionSpecifier.h"
 
 namespace mlinsight{
 typedef c10::DataPtr (*allocate_t)(void * ptr, size_t bytes);
 
-#ifndef TORCH_VERSION_20_LATER
+#if TORCH_VERSION_MAJOR >= 2
 struct CudaCachingAllocatorProxy : public c10::Allocator {
    c10::Allocator* realCUDACachineAllocatorPtr;
    CudaCachingAllocatorProxy(Allocator* realCUDACachineAllocatorPtr):realCUDACachineAllocatorPtr(realCUDACachineAllocatorPtr){
@@ -30,7 +31,11 @@ struct CudaCachingAllocatorProxy : public c10::Allocator {
       trackPytorchAllocation(size, allocatePtr.get());
       return allocatePtr;
     }
+#if TORCH_VERSION_MAJOR < 2
     catch (const c10::CUDAOutOfMemoryError& e)
+#else
+    catch (const c10::OutOfMemoryError& e)
+#endif
     {  //c10/util/Exception.h
 
       reportMemoryProfile(size);
@@ -53,7 +58,7 @@ AllocatorGet_t realAllocatorGetPtr=nullptr;
 c10::Allocator* cudaAllocatorProxyPtr=nullptr;
 void* realGetDeviceStatsPtr=nullptr;
 
-static void raw_delete_proxy(void* ptr){
+void raw_delete_proxy(void* ptr){
   //pthread_mutex_lock(&pytorchMemoryManagementLock);
   assert(realRawDeletePtr!=nullptr);
   printf("******raw_delete_proxy ptr %p now!!!!!!*****\n", ptr);
@@ -80,9 +85,9 @@ c10::Allocator* allocator_get_proxy(void) {
     cudaCachingAllocatorFractionMap[device]=fraction;
     //pthread_mutex_unlock(&pytorchMemoryManagementLock);
   }
-#else
-  c10::DeleterFnPtr realDeleter = nullptr;
-  std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr=nullptr;
+
+c10::DeleterFnPtr realDeleter = nullptr;
+std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr=nullptr;
 #endif
 
 }

@@ -22,7 +22,6 @@ uint64_t updateSpinlock;
 AtomicSpinLock threadUpdateLock; //Lock used in LogicalClock.h to update thread counters
 uint32_t threadNum = 0; //Actual thread number recorded
 
-
 HookContext *constructContext(mlinsight::HookInstaller &inst) {
     HookContext *ret = new HookContext();
     if (!ret) {
@@ -42,7 +41,7 @@ HookContext *constructContext(mlinsight::HookInstaller &inst) {
     ret->_this = mlinsight::HookInstaller::instance;
 
     ret->threadId = pthread_self();
-    
+
     return ret;
 }
 
@@ -128,7 +127,6 @@ void populateRecordingArray(mlinsight::HookInstaller& inst) {
 
 
 __thread HookContext *curContext __attribute((tls_model("initial-exec")));
-
 __thread uint8_t bypassCHooks __attribute((tls_model("initial-exec"))) = MLINSIGHT_FALSE; //Anything that is not MLINSIGHT_FALSE should be treated as MLINSIGHT_FALSE
 
 inline void savePerThreadTimingData(std::stringstream &ss, HookContext *curContextPtr) {
@@ -257,18 +255,24 @@ inline void saveDataForAllOtherThread(std::stringstream &ss, HookContext *curCon
 
 void saveData(HookContext *curContextPtr, bool finalize) {
     bypassCHooks = MLINSIGHT_TRUE;
-    return;
-    /* CS: Check whether data has been saved. Make sure data is only saved once */
+    // if(logFileStd){
+    //     //Flush log all the time
+    //     fflush(logFileStd);
+    // }
+    /* CS: Check whether data for the current thread has been saved. Make sure data is only saved once */
     if (__atomic_test_and_set(&curContextPtr->dataSaved, __ATOMIC_ACQUIRE)) {
         //INFO_LOGS("Thread data already saved, skip %d/%zd", i, threadContextMap.getSize());
         return;
     }
     /* CS: End */
 
-    if (!curContext) {
-        fatalError("curContext is not initialized, won't save anything");
-        return;
+
+    if (finalize == true) {
+        //The main thread ends
+        reportMemoryProfile(0);
+        OUTPUT("MLInsight memory profile logs has been saved memoryprofile_*.txt.\n");
     }
+    return;
 
     uint64_t curLogicalClock = threadTerminatedRecord();
 //    INFO_LOGS("AttributingThreadEndTime+= %lu - %lu", curLogicalClock, curContextPtr->threadExecTime);
@@ -288,16 +292,6 @@ void saveData(HookContext *curContextPtr, bool finalize) {
     }
 
 }
-
-
-void exitHandler(HookContext *curContextPtr, bool finalize) {
-    if(finalize == true) {
-        reportMemoryProfile(0);
-    }
-    saveData(curContextPtr, finalize);
-}
-
-
 
 
 }

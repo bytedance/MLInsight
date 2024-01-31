@@ -5,6 +5,7 @@
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <c10/cuda/CUDAGraphsC10Utils.h>
 #include <c10/core/Allocator.h>
+#include "common/DependencyLibVersionSpecifier.h"
 
 #include <map>
 #include "analyse/PytorchMemory.h"
@@ -15,9 +16,11 @@ extern pthread_mutex_t pytorchMemoryManagementLock;
 typedef void (*raw_delete_t)(void*);
 typedef c10::Allocator* (*AllocatorGet_t)(void);
 
+#if TORCH_VERSION_MAJOR >=2
 extern raw_delete_t realRawDeletePtr;
 extern AllocatorGet_t realAllocatorGetPtr;
 extern std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr;
+#endif
 
 extern void* realGetDeviceStatsPtr;
 
@@ -27,7 +30,7 @@ c10::Allocator* allocator_get_proxy(void);
 extern std::map<int,double> cudaCachingAllocatorFractionMap;
 void setMemoryFraction_proxy(double fraction, int device);
 
-#ifdef TORCH_VERSION_20_LATER
+#if TORCH_VERSION_MAJOR >= 2
 using namespace c10::cuda::CUDACachingAllocator;
 using namespace c10;
 using namespace c10::cuda;

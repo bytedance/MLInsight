@@ -64,8 +64,24 @@ struct HookContext {
 const uint8_t MLINSIGHT_TRUE = 145;
 const uint8_t MLINSIGHT_FALSE = 167;
 
-void exitHandler(HookContext *context, bool finalize = false);
-void saveData(HookContext *context, bool finalize);
+
+class ThreadExitHook{
+public:
+    //Variable used to prevent the compiler from removing unused variable.
+    char initializeMe=0;
+    ~ThreadExitHook();
+};
+
+/**
+ * This function is guaranteed to be invoked at the end of each thread.
+ * Note that saveData will be invoked multiple times at different locations to ensure the recording of accurate exit time
+ * and ensures that all exit points are captured.
+ * User should use flags to prevent multiple data saving in this function.
+ *
+ * @param context
+ * @param finalize Whether this is the end of the main thread
+ */
+void saveData(HookContext *context, bool finalize=false);
 
 
 extern __thread HookContext *curContext;

@@ -11,12 +11,13 @@
 #include <cstring>
 #include <cmath>
 #include <csignal>
-
-
+#include <Python.h>
+#include <frameobject.h>
+#include <ceval.h>
 
 #include "common/Tool.h"
 
-namespace mlinsight{
+namespace mlinsight {
     std::vector<ssize_t> findStrSplit(std::string &srcStr, char splitChar) {
         std::vector<ssize_t> splitPoints;
         //Augment the first and last character in a string with splitChar.
@@ -107,7 +108,7 @@ namespace mlinsight{
         }
     }
 
-    void * memSearch(void *target, ssize_t targetSize, void *keyword, ssize_t keywordSize) {
+    void *memSearch(void *target, ssize_t targetSize, void *keyword, ssize_t keywordSize) {
         //Convert it to uint8* so that we can perform arithmetic operation on those pointers
         uint8_t *kwd = static_cast<uint8_t *>(keyword);
         uint8_t *tgt = static_cast<uint8_t *>(target);
@@ -148,7 +149,7 @@ namespace mlinsight{
         //DBG_LOGS("Real addr from:%p to:%p", startPtrBound, endPtrBound);
         if (mprotect(startPtrBound, memoryLength, prem) != 0) {
             ERR_LOGS("Could not change the process memory permission at %p-%p because: %s", startPtrBound, endPtrBound,
-                    strerror(errno));
+                     strerror(errno));
             signal(SIGINT, 0);
             return false;
         }
@@ -194,7 +195,7 @@ namespace mlinsight{
                 spaceInserted = true;
             }
         }
-        outString=ss.str();
+        outString = ss.str();
 
         return true;
     }
@@ -205,51 +206,76 @@ namespace mlinsight{
     bool adjustMemPerm(void *startPtr, void *endPtr, int prem);
 
     /* Obtain a backtrace and print it to stdout. */
-    void print_stacktrace (void) {
-    #define CALL_STACK_NUM 15
-    void *array[CALL_STACK_NUM];
-    char **strings;
-    int size, i;
+    void print_stacktrace(void) {
+#define CALL_STACK_NUM 15
+        void *array[CALL_STACK_NUM];
+        char **strings;
+        int size, i;
 
-    size = backtrace (array, CALL_STACK_NUM);
-    #if 0
-    for (i = 0; i < allocatedSize; i++) {
-        printf("[%d], %p\n", i, array[i]); 
+        size = backtrace(array, CALL_STACK_NUM);
+#if 0
+        for (i = 0; i < allocatedSize; i++) {
+            INFO_LOGS("[%d], %p\n", i, array[i]);
+        }
+#endif
+        strings = backtrace_symbols(array, size);
+        if (strings != NULL) {
+
+            OUTPUTS("Obtained %d stack frames.\n", size);
+            for (i = 0; i < size; i++) {
+                OUTPUTS ("%s\n", strings[i]);
+            }
+        }
+
+        free(strings);
     }
-    #endif
-    strings = backtrace_symbols (array, size);
-    if (strings != NULL)
-    {
 
-        printf ("Obtained %d stack frames.\n", size);
-        for (i = 0; i < size; i++)
-        printf ("%s\n", strings[i]);
-    }
-
-    free (strings);
-    }
-
-    void print_stacktrace (std::ofstream & output) {
+    void print_stacktrace(std::ofstream &output) {
         using namespace std;
         void *array[CPP_CALL_STACK_LEVEL];
         char **strings;
         int size, i;
 
-        size = backtrace (array, CPP_CALL_STACK_LEVEL);
+        size = backtrace(array, CPP_CALL_STACK_LEVEL);
 
-        strings = backtrace_symbols (array, size);
-        if (strings != NULL)
-        {
+        strings = backtrace_symbols(array, size);
+        if (strings != NULL) {
 
             output << "Obtained " << size << "stack frames." << endl;
             for (i = 0; i < size; i++)
-                output << strings[i] << endl; 
+                output << strings[i] << endl;
         }
 
-        free (strings);
+        free(strings);
     }
 
-    void getCppStacktrace(CallStack<void*, CPP_CALL_STACK_LEVEL>& retCallStack) {
-        retCallStack.levels=backtrace(retCallStack.array, CPP_CALL_STACK_LEVEL);
+    void print_pystacktrace(){
+        if(isPythonAvailable() && Py_IsInitialized()){
+            //        //Child paorcess
+            PyGILState_STATE gstate;
+            gstate = PyGILState_Ensure();
+            PyFrameObject* currentFrame= PyEval_GetFrame();
+            int i=0;
+            while(currentFrame!=NULL){
+
+                const char* pythonSourceFileName=PyUnicode_AsUTF8(currentFrame->f_code->co_filename);
+                const char* pythonFunctionName=PyUnicode_AsUTF8(currentFrame->f_code->co_name);
+
+                DBG_LOGS("%d Function: %s Line: %s:%d",i++,pythonFunctionName,
+                          pythonSourceFileName,PyFrame_GetLineNumber(currentFrame));
+                //Go to next frame
+                currentFrame=currentFrame->f_back;
+            }
+
+            //INFO_LOGS("Collecting callstacks with level %d\n", callstack.levels);
+            //Release GIL
+            PyGILState_Release(gstate);
+        }else{
+            ERR_LOG("Process %d is not a python process so MLInsight cannot print python process");
+        }
+    }
+
+    void getCppStacktrace(CallStack<void *, CPP_CALL_STACK_LEVEL> &retCallStack) {
+        retCallStack.levels = backtrace(retCallStack.array, CPP_CALL_STACK_LEVEL);
     }
 }
