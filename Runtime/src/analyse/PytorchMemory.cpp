@@ -197,7 +197,7 @@ void trackPytorchAllocation(ssize_t size, void * ptr) {
            then definitely we would need to merge its next object. 
        (2) Even if the current object is larger than the requested size, 
            we need to check whether we could merge with the neighbor. 
-           Otherwie, it will create an issue for the following allocation.
+           Otherwise, it will create an issue for the following allocation.
            0x8f600~0x8f623 
            0x8f623~0x8f640 
 
@@ -443,6 +443,13 @@ void printLeakyTorchObjects(std::ofstream &output) {
             leakObj = leakyObjsMap[&object->callstack]; 
         }
 
+        DBG_LOGS("leakObj->aliveCount += 1 %zd", leakObj->aliveCount);
+        DBG_LOGS("leakObj->aliveMem += object->size %zd", leakObj->aliveMem);
+        OUTPUT("Callstack lines: ")
+        for(int i=0;i<object->callstack.levels;++i){
+            OUTPUTS("%zd,",object->callstack.array[i].pythonSourceFileLineNumber);
+        }
+        OUTPUT("\n");
         leakObj->aliveCount += 1;
         leakObj->aliveMem += object->size;
         if(leakObj->aliveMem > maxWaste) {
@@ -480,10 +487,12 @@ void printLeakyTorchObjects(std::ofstream &output) {
         PotentialLeakOject* leakObject = leakyObjsMap[it.second];
         CallStack<PyCallStack, PYTHON_CALL_STACK_LEVEL> * cs = it.second;
         output << i << "-th pytorch object: waste - " << format_size(leakObject->aliveMem) << ", alloc times: " << leakObject->aliveCount
-               << ", unit size - "
-               << format_size(leakObject->size) << ", callsite level: " << cs->levels << endl;
+               << ", callsite level: " << cs->levels << endl;
 
-        printPythonCallstack(output, cs); 
+        //<< ", unit size - "
+        //<< format_size(leakObject->size) <<
+
+        printPythonCallstack(output, cs);
 
         i++; 
     }

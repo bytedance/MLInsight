@@ -237,6 +237,8 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
 
         leakObj->aliveCount += 1;
         leakObj->aliveMem += object->size;
+
+
         if(leakObj->aliveMem > maxWaste) {
             maxWaste = leakObj->aliveMem;  
         }
@@ -280,7 +282,8 @@ void updateDriverMemoryOnAlloc(ssize_t size, void *devicePtr, CallStack<void*, C
 
         const CallStack<void*, CPP_CALL_STACK_LEVEL> * cs = it.second;
         output << i << "-th driver object: waste - " << format_size(leakObject->aliveMem) << ", alloc times: " << leakObject->aliveCount
-               << ", unit size - " << format_size(leakObject->size) << ", callsite level: " << cs->levels << endl;
+              << ", callsite level: " << cs->levels << endl;
+        // << ", unit size - " << format_size(leakObject->size)  I temporarily deleted unit size because the same callstack may have different allocation size.
        
         char **strings;
         strings = backtrace_symbols(cs->array, cs->levels);
