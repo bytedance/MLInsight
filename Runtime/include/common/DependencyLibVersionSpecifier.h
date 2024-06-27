@@ -2,7 +2,9 @@
 #define MLINSIGHT_DEPENDENCYLIBVERSIONSPECIFIER_H
 
 #ifdef USE_TORCH
+
 #include <torch/csrc/api/include/torch/version.h>
+
 #endif
 
 #endif //MLINSIGHT_DEPENDENCYLIBVERSIONSPECIFIER_H

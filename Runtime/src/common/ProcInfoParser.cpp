@@ -13,181 +13,166 @@
 #include <utility>
 #include "common/ProcInfoParser.h"
 #include "common/Tool.h"
-
+#include "trace/hook/HookInstaller.h"
 
 
 #define PROCMAPS_LINE_MAX_LENGTH  (PATH_MAX + 100)
 namespace mlinsight {
 
 
-    PmParser::PmParser(std::string saveFolderName, std::string customProcFileName) : folderName(saveFolderName),
-                                                                                     customProcFileName(
-                                                                                             customProcFileName),
-                                                                                     pmEntryArray(70) {
+    PmParser::PmParser(FILE *fileNameStrTbl, std::string customProcFileName) : fileNameStrTbl(fileNameStrTbl),
+                                                                               customProcFileName(
+                                                                                       customProcFileName) {
+        assert(fileNameStrTbl != nullptr);
     }
 
 
     bool PmParser::parsePMMap() {
-        loadingId+=1;
-        
-        FILE *procFile = openProcFile();
+        //printPM();
+
+        FILE * procFile = openProcFile();
         if (!procFile)
             return false;
+
+        //For every parsing, increase pmParsingLoadingCounter by 1
+        ++loadingCounter;
 
         std::string addr1, addr2, perm, offset;
 
         //Save the filename of this loading
-        char procMapLine[512];
+        char procMapLine[4096];
         char permStr[9];
-        uint8_t *addrStart;
-        uint8_t *addrEnd;
-        //std::stringstream ss;
-        //ss << folderName << "/" << loadingId << "fileName.txt";
-        //FILE *fileNameStrTbl = fopen(ss.str().c_str(), "w");
-        //if (!fileNameStrTbl) {
-        //    fatalErrorS("Cannot open %s", ss.str().c_str());
-        //}
+        uint8_t *startAddress;
+        uint8_t *endAddress;
 
-        //fprintf(fileNameStrTbl, "%s,%s\n", "globalFileId", "pathName");
+        //Clear pmEntryArray
+        pmEntryArray.clear();
+        //Clear file existence flag
+        for (int i = 0; i < fileEntryArray.size(); ++i) {
+            fileEntryArray[i].fileExists = false;
+            //Since pmEntry has changed, we also need to clear this array and re-parse it again.
+            fileEntryArray[i].pmEntryRange.clear();
+        }
 
-
-        while (fgets(procMapLine, sizeof(procMapLine), procFile)) {
+        while (fgets(procMapLine, sizeof(procMapLine) / sizeof(char), procFile)) {
 #ifndef NDEBUG
             //Make sure the buffer is enough
-            size_t len = strnlen(procMapLine, sizeof(procMapLine));
+            size_t len = strnlen(procMapLine, sizeof(procMapLine) / sizeof(char));
             if (len != 0 && procMapLine[len] != '\0') {
-                fatalErrorS("Line %s in /proc/{pid}/map exceeded buffer allocatedSize %lu. Please adjust procMapLine allocatedSize",
-                            procMapLine, sizeof(procMapLine));
-                return false;
+                fatalErrorS(
+                        "Line %s in /proc/{pid}/map exceeded buffer size %lu. Please adjust procMapLine size",
+                        procMapLine, sizeof(procMapLine));
             }
 #endif
             char pathName[PATH_MAX] = "";
             //Read pmEntry line
-            int scanfReadNum = sscanf(procMapLine, "%p-%p %8s %*s %*s %*s %s", &addrStart, &addrEnd, permStr, pathName);
+            int scanfReadNumber = sscanf(procMapLine, "%p-%p %8s %*s %*s %*s %s", &startAddress, &endAddress, permStr,
+                                         pathName);
 
-            ssize_t pathNameLen = strlen(pathName);
+            //Insert new line into pmEntryArray
+            std::string pathNameStr(pathName);
+            ssize_t curPmEntryId = pmEntryArray.size();
+            PMEntry &curPmEntry = pmEntryArray.emplace_back(PMEntry());
+            curPmEntry.addrStart = startAddress;
+            curPmEntry.addrEnd = endAddress;
+            curPmEntry.setPermBits(permStr);
+            curPmEntry.pathNameString = pathNameStr;
 
-            //Find if there is a match based on address search
-            ssize_t lo;
-            bool found = false;
-            findPmEntryIdByAddr(addrStart, lo, found);
-            PMEntry *newPmEntry = nullptr;
-            ssize_t fileIdSearchStartingPoint=0;
-            if (found) {
-                PMEntry &pmEntry = pmEntryArray[lo];
-                FileEntry &fileEntry = fileEntryArray[pmEntry.globalFileId];
-                fileEntry.loadingId = loadingId;
-                fileIdSearchStartingPoint=pmEntry.globalFileId;
-                bool endAddressIsTheSame = (pmEntry.addrEnd == addrEnd);
-                bool fileNameIsTheSame = (strncmp(&stringTable.get(fileEntry.pathNameStartIndex), pathName,
-                                                  fileEntry.getPathNameLength()) == 0);
+            //Find whether current line has been loaded before
+            auto fileEntryFindResult = fileNameFileIdMap.find(pathNameStr);
 
-                if (endAddressIsTheSame && fileNameIsTheSame) {
-                    //Exactly the same entry (Ignore permission and other attrs). Replace permission fields just in case.
-                    //Update loading id
-                    //INFO_LOG("Exactly the same entry");
-                    pmEntry.loadingId = loadingId;
-                    pmEntry.setPermBits(permStr);
-                    continue;
-                } else if (!endAddressIsTheSame && fileNameIsTheSame) {
-                    //Only end address change, replace it and do not create file entry
-                    pmEntry.addrEnd = addrEnd;
-                    continue;
-                } else {
-                    //FileName is not the same, endAddress may or may not be the same.
-                    //Replace end address, and remove linkage to the original fileEntry
-                    //INFO_LOG("Same starting address, but different end address/fileName. Replace entry, and remove linkage to the original fileEntry");
-                    newPmEntry = &pmEntry;
-                    assert(fileEntry.pmEntryNumbers > 0);
-                    fileEntry.pmEntryNumbers -= 1; //Remove linkage to the previous file entry
-                    //INFO_LOG("Same starting address, but different end address/fileName.");
-                    //INFO_LOGS("%p %p %s %s", pmEntry.addrEnd, addrEnd, &stringTable.get(fileEntry.pathNameStartIndex),
-                    //          pathName);
-                }
+            ssize_t curFileId = -1;
+            if (fileEntryFindResult == fileNameFileIdMap.end()) {
+                curFileId = fileEntryArray.size();
+                //Set fileExist flag to true
+                FileEntry &newFileEntry = fileEntryArray.emplace_back(FileEntry());
+                newFileEntry.filePath = pathNameStr;
+                //newFileEntry.startAddr=startAddress;
+                //newFileEntry.endAddr=endAddress;
+                newFileEntry.valid = isFileNameValid(scanfReadNumber, pathName, curFileId);
+                newFileEntry.loadingCounter = loadingCounter;
+                //Insert a new File Entry into fileEntryMap and fileIdFileNameMap
+                fileNameFileIdMap[pathNameStr] = curFileId;
+                //INFO_LOGS("Found a new file %s",pathNameStr.c_str());
+                fprintf(fileNameStrTbl, "%s\n", pathNameStr.c_str());
             } else {
-                fileIdSearchStartingPoint=fileEntryArray.getSize()-1;
-                //Not found, create a new PmEntry
-                //INFO_LOG("Not found, create a new PmEntry");
-                newPmEntry = &pmEntryArray.insert(lo);
+                //This is a pre-existing file or a file that has the same absolute path as before.
+                curFileId = fileEntryFindResult->second;
             }
-            newPmEntry->creationLoadingId = loadingId;
-            newPmEntry->loadingId = loadingId;//Update the loading id
-            newPmEntry->addrStart = addrStart;
-            newPmEntry->addrEnd = addrEnd;//Update end address
-            newPmEntry->globalFileId = -1;//Allocate and set later
-            newPmEntry->setPermBits(permStr);
-
-            //Check if we need to allocate a new globalFileId or not by comparing with previous pmEntry's fileName.
-            //Linearly search for the same file
-            //INFO_LOGS("Try to match line: %s", procMapLine);
-            if (matchWithPreviousFileId(loadingId, pathName, pathNameLen,
-                                        newPmEntry)) {
-                //New
-                continue;
+            //Update the file address range
+            FileEntry &fileEntry = fileEntryArray[curFileId];
+            //FileEntry updated, so we set these flag to true
+            fileEntry.fileExists = true; //File still show up in this parsing
+            curPmEntry.globalFileId = curFileId; //Map callerFileId to current pmEntry
+            if (fileEntry.fileUnloaded) {
+                //This file is previously unloaded, so we need to install it again.
+                //Set fileEntryloadingCounter to loadingCounter
+                fileEntry.loadingCounter = loadingCounter;
             }
-            //INFO_LOGS("Create new file entry line: %s", procMapLine);
-            //INFO_LOGS("Array Size: %s", procMapLine);
-            createFileEntry(newPmEntry, loadingId, pathName, pathNameLen, scanfReadNum);
 
+            fileEntry.fileUnloaded = false; //File shows up (again) so it is not unloaded
+
+            /*
+            * Add this pmEntry to continous address range variable in fileEntry
+            */
+            if (fileEntry.pmEntryRange.size() == 0) {
+                //This struct will be cleared at the beginning of parsePMMap
+                fileEntry.pmEntryRange.emplace_back(std::make_pair(curPmEntryId, curPmEntryId));
+            } else {
+                auto &backRangePair = fileEntry.pmEntryRange.back();
+                //Check if the current pmEntry's address range is a continous to backRangePair.second. If no, we will allocate a new pair.
+                if (pmEntryArray[backRangePair.second].addrEnd == curPmEntry.addrStart) {
+                    //Continous to the previous entry, merge.
+                    backRangePair.second = curPmEntryId;
+                } else {
+                    //Not continous to the previous entry. Push a new pair.
+                    fileEntry.pmEntryRange.emplace_back(std::make_pair(curPmEntryId, curPmEntryId));
+                }
+            }
         }
 
+
+
         //Delete deleted pmEntries
-        rmDeletedPmEntries(loadingId);
+        handleUnloadedFileEntries();
 
-        //Clear baseStartAddr
-        updateFileBaseAddr();
 
-        //fclose(fileNameStrTbl);
         fclose(procFile);
 
 #ifndef NDEBUG
+        //Check whether fileEntry is incremental to ensure there is no overlapping
+        //This process involves a lot of string comparison, so it is only performed when NDEBUG is not defined
+        //If some assertion is false, then check implementation of this function
         void *curAddr = nullptr;
 
-        for (int i = 0; i < pmEntryArray.getSize(); ++i) {
-            if (pmEntryArray[i].addrStart < curAddr) {
-                fatalError("/proc/{pid}/maps address is assumed to be always increasing.")
-                exit(-1);
-            }
-            curAddr = pmEntryArray[i].addrStart;
+        for (int i = 0; i < pmEntryArray.size(); ++i) {
+            PMEntry &curPmEntry = pmEntryArray[i];
+            assert(curAddr <= curPmEntry.addrStart);
+            assert(curPmEntry.addrStart < curPmEntry.addrEnd);
+            curAddr = curPmEntry.addrEnd;
         }
 #endif
+        /*
+        for(FileID callerFileId=0;callerFileId<fileEntryArray.size();++callerFileId){
+            INFO_LOGS("%s",fileEntryArray[callerFileId].filePath.c_str());
+            for(ssize_t i=0;i<fileEntryArray[callerFileId].pmEntryRange.size();++i){
+                auto& curEntry=fileEntryArray[callerFileId].pmEntryRange[i];
+                INFO_LOGS("%p:%p",pmEntryArray[curEntry.first].addrStart,pmEntryArray[curEntry.second].addrEnd);
+            }
+        }
+        */
         return true;
     }
 
-    void PmParser::updateFileBaseAddr() {
-        for (int i = 0; i < fileEntryArray.getSize(); ++i) {
-            fileEntryArray[i].baseStartAddr = reinterpret_cast<uint8_t *>(UINTPTR_MAX);
-            fileEntryArray[i].baseEndAddr = 0;
-        }
 
-        //Update baseStartAddr
-        for (int i = 0; i < pmEntryArray.getSize(); ++i) {
-            FileEntry &curFileEntry = fileEntryArray[pmEntryArray[i].globalFileId];
-            curFileEntry.baseStartAddr = min(curFileEntry.baseStartAddr, pmEntryArray[i].addrStart);
-            curFileEntry.baseEndAddr = max(curFileEntry.baseEndAddr, pmEntryArray[i].addrEnd);
-        }
-
-        //Set library-specific base address variable
-        if(libc10_cuda_fileId >= 0){
-            FileEntry &curFileEntry = fileEntryArray[libc10_cuda_fileId];
-            libc10_cuda_text_begin = curFileEntry.baseStartAddr;
-            libc10_cuda_text_end = curFileEntry.baseEndAddr;
-           // INFO_LOGS("libc10_cuda.so found in pmParserAddr address range %p-%p",libc10_cuda_text_begin,libc10_cuda_text_end);
-        }else{
-            INFO_LOG("libc10_cuda.so not found in pmParserAddr");
-        }
-    }
-
-
-    void PmParser::rmDeletedPmEntries(ssize_t loadingId) {
-        for (int i = pmEntryArray.getSize() - 1; i >= 0; --i) {
+    void PmParser::handleUnloadedFileEntries() {
+        for (int i = 0; i < fileEntryArray.size(); ++i) {
+            FileEntry &curFileEntry = fileEntryArray[i];
             //Remove all non-updated PLT entries (which means entries no longer exists)
-            assert(abs(loadingId - pmEntryArray[i].loadingId) <= 1);
-
-            if (pmEntryArray[i].loadingId < loadingId) {
-                //Currently we do not need to return this
-                fileEntryArray[pmEntryArray[i].globalFileId].pmEntryNumbers -= 1;//Unlink pmEntry
-                pmEntryArray.erase(i);
+            if (!curFileEntry.fileUnloaded && !curFileEntry.fileExists) {
+                //pyModuleNameFileIdMap.erase(curFileEntry.filePath); This erase operation is not necessary because we want to map repeatedly loaded file that has the same absolute path to the same id.
+                INFO_LOGS("Scaler finds that file %s has been unloaded", curFileEntry.filePath.c_str());
+                curFileEntry.fileUnloaded = true;
             }
         }
     }
@@ -201,67 +186,39 @@ namespace mlinsight {
         ss << "/proc/self/maps";
 
         std::ifstream ifs(ss.str());
-        std::ostringstream oss;
-        if (ifs.is_open()) {
-            oss << ifs.rdbuf();
-            OUTPUTS("%s\n", oss.str().c_str());
-        }
+        if (ifs.is_open())
+            std::cout << ifs.rdbuf() << std::endl;
     }
 
     ssize_t PmParser::findFileIdByAddr(void *addr) {
-        bool found = false;
-        ssize_t pmEntryId;
-        findPmEntryIdByAddr(addr, pmEntryId, found);
-
-        if(!found){
-            //Currently, findPmEntryIdByAddr returns lowerbound, so we . We should change it to return upperbound for consistency.
-            pmEntryId-=1;
-            assert(pmEntryId>=0);
-        }
-
-        //Since we only search PLT, it is impossible to hit the memory segment boundary.
-        assert(found == false && 0 <= pmEntryId && pmEntryId < pmEntryArray.getSize());
-        ssize_t ret = pmEntryArray[pmEntryId].globalFileId;
-        return ret;
+        auto pmEntryIterator = findPmEntryIdByAddr(addr);
+        return pmEntryIterator->globalFileId;
     }
 
-
-    void PmParser::findPmEntryIdByAddr(void *addr, ssize_t &lo, bool &found) {
-        //Since sortedSegments are sorted by starting address and all address range are not overlapping.
-        //We could use binary search to lookup addr in this array.
-        //Binary search impl segAddrFileMap
-        lo = 0;
-        ssize_t md = 0, hi = pmEntryArray.getSize() - 1;
-        found = true;
-        //INFO_LOGS("pmEntryArray.getSize()=%zd\n",pmEntryArray.getSize());
-
-        while (lo <= hi) {
-            md = lo + (hi - lo) / 2;
-            assert(lo <= hi);
-            //DBG_LOGS("lo=%zd, md=%zd,hi=%zd",lo,md,hi);
-            //DBG_LOGS("pmEntryArray[%zd]",md);
-            if (pmEntryArray[md].addrStart < addr) {
-                lo = md + 1;
-            } else if (pmEntryArray[md].addrStart > addr) {
-                hi = md - 1;
-            } else {
-                //Find left bound, although this should be impossible in this case
-                hi = md - 1;
-            }
-        }
-
-        if (pmEntryArray.getSize() == 0) {
-            found = false;
-        } else if (lo >= pmEntryArray.getSize() || pmEntryArray[lo].addrStart != addr) {
-            found = false;
-            //INFO_LOGS("Not Found %zd %zd %p %p",lo,pmEntryArray.getSize(),pmEntryArray[lo].addrStart,addr);
-        }
+    bool comaprePmEntryByStartAddr(const PMEntry &lho, const PMEntry &rho) {
+        return lho.addrStart <= rho.addrStart;
     }
 
+    std::vector<PMEntry>::iterator PmParser::findPmEntryIdByAddr(void *addr) {
+        PMEntry key;
+        key.addrStart = (uint8_t *) addr;
+        auto lowerBound = std::lower_bound(pmEntryArray.begin(), pmEntryArray.end(), key, comaprePmEntryByStartAddr);
+         --lowerBound;
+        assert(lowerBound != pmEntryArray.begin());
+        if(!(lowerBound->addrStart <= addr && addr <= lowerBound->addrEnd)){
+            this->parsePMMap();
+            lowerBound = std::lower_bound(pmEntryArray.begin(), pmEntryArray.end(), key, comaprePmEntryByStartAddr);
+            --lowerBound;
+        }
+        
+
+        assert(lowerBound->addrStart <= addr && addr <= lowerBound->addrEnd);
+        return lowerBound;
+    }
 
 
     FILE *PmParser::openProcFile() {
-        FILE *procFile = nullptr;
+        FILE * procFile = nullptr;
         if (customProcFileName.empty()) {
             const char *procIdStr = "/proc/self/maps";
             //Using test file rather than real proc filesystem
@@ -280,88 +237,73 @@ namespace mlinsight {
         return procFile;
     }
 
-
-    bool PmParser::matchWithPreviousFileId(ssize_t curLoadingId, char *pathName,
-                                           ssize_t pathNameLen, PMEntry *newPmEntry) {
-        bool hasPreviousFileNameMatch = false;
-        //Search forward
-        for (ssize_t i = 0; i < this->fileEntryArray.getSize(); ++i) {
-//            INFO_LOGS("Compare %s(%zd) with %s(%zd)", pathName, pathNameLen,
-//                      &stringTable.find(fileEntryArray[pmEntryArray[i].globalFileId].pathNameStartIndex),
-//                      fileEntryArray[pmEntryArray[i].globalFileId].getPathNameLength());
-            if (curLoadingId - fileEntryArray[i].loadingId <= 1
-                && fileEntryArray[i].pmEntryNumbers>0
-                && fileEntryArray[i].getPathNameLength() == pathNameLen
-                && strncmp(&stringTable.get(fileEntryArray[i].pathNameStartIndex),
-                           pathName, pathNameLen) == 0) {
-                //Previous filename matches with current file name, no need to create file entry
-                newPmEntry->globalFileId = i;
-                fileEntryArray[i].loadingId = curLoadingId;
-                fileEntryArray[i].pmEntryNumbers += 1;
-                hasPreviousFileNameMatch = true;
-                break;
-            }
-        }
-
-        return hasPreviousFileNameMatch;
-    }
-
-    void PmParser::createFileEntry(PMEntry *newPmEntry, ssize_t loadingId, char *pathName, ssize_t pathNameLen,
-                                   ssize_t scanfReadNum) {
-        ssize_t newFileId = fileEntryArray.getSize();
-        FileEntry& newFileEntry = fileEntryArray.pushBack(); //We should not use insert because globalFileId is hard-coded into dynamically generated assembly instructions.
-        newPmEntry->globalFileId = newFileId;
-        newFileEntry.loadingId = loadingId;
-        newFileEntry.creationLoadingId = loadingId;
-        newFileEntry.pmEntryNumbers += 1;
-        newFileEntry.pathNameStartIndex = stringTable.getSize();
-        char *ret = stringTable.allocateArrayRaw(pathNameLen + 1);
-        memcpy(ret, pathName, pathNameLen + 1);//+1 because of '\0'
-        newFileEntry.pathNameEndIndex = stringTable.getSize();
-        newFileEntry.valid = true;//Decide later
-
+    bool PmParser::isFileNameValid(int scanfreturnValue, const std::string &pathName, ssize_t curFileId) {
         //Check the validity of fileEntry
         std::string dirName;
         std::string fileName;
         extractFileName(pathName, dirName, fileName);
 
         //Check scanf succeeded or not
-        if (scanfReadNum == 3) {
-            //DBG_LOGS("No file name, do not create file entry: %s", procMapLine);
-            newFileEntry.valid = false;
+        if (scanfreturnValue == 3) {
+            //DBG_LOG("No file name, do not create file entry");
+            return false;
         } else if (pathName[0] == '[') {
-            //DBG_LOGS("Illegal filename, do not create file entry:%s", procMapLine);
-            newFileEntry.valid = false;
-        } else if (scanfReadNum != 4) {
-            newFileEntry.valid = false;
-            fatalError("Parsing line failed, if this line looks normal, check limits.");
-        } else if (strStartsWith(fileName, "libmlinsight")) {
-            //DBG_LOG("Do not create file entry for MLInsight library");
-            newFileEntry.valid = false;
-            mlinsightFileId = newFileId;
+            //DBG_LOG("Illegal filename, do not create file entry");
+            return false;
+        } else if (strStartsWith(fileName, "libmlinsight")) { //|| strStartsWith(fileName, "_scaler")
+            DBG_LOGS("libmlinsight name is %s",fileName.c_str());
+            //DBG_LOG("Do not create file entry for Scaler library");
+            if(strStartsWith(fileName, "libmlinsight.so")){
+                //Save current file ID
+                assert(mlinsightFileID == -1);
+                //Save Scaler's file ID
+                mlinsightFileID = curFileId;
+            }
+            return false;
         } else if (strStartsWith(fileName, "ld-")) {
             //DBG_LOG("Do not hook ld.so library");
-            newFileEntry.valid = false;
-        }else if (strStartsWith(fileName, "libdl-")) {
+            return false;
+        } else if (strStartsWith(fileName, "libdl-")) {
             //DBG_LOG("Do not hook ld.so library");
-            newFileEntry.valid = false;
-        }
-        else if (fileName.size()==14 && fileName == "libc10_cuda.so") {
+            return false;
+        } else if (scanfreturnValue != 4) {
+            return false;
+        } else if (libc10_cuda_fileId == -1 && fileName.size() == 14 && fileName == "libc10_cuda.so") {
             //DBG_LOG("Do not hook ld.so library");
             //DBG_LOG("Found libc10 cuda fileId");
-            libc10_cuda_fileId = newFileId;
+            libc10_cuda_fileId = curFileId;
         }
+        return true;
     }
 
-
-
-    const char *PmParser::getStr(ssize_t strStart) {
-        return &stringTable.get(strStart);
-    }
 
     ssize_t PmParser::getFileEntryArraySize() {
-        return fileEntryArray.getSize();
+        return fileEntryArray.size();
     }
+
+    ssize_t PmParser::getPythonInterpreterFileId() {
+        /**
+         * Python interpreter may have many names. So we try a different approach to find its id.
+         */
+        if (pythonIntrepreterFileId == -1) {
+            void *addr = dlsym(RTLD_DEFAULT, "Py_IsInitialized");
+            if (addr != nullptr) {
+                pythonIntrepreterFileId = findFileIdByAddr(addr);
+//                INFO_LOGS("addr=%p pythonInterpreterFileId=%d",addr, pythonIntrepreterFileId);
+//                printPM();
+                assert(pythonIntrepreterFileId >= 0);
+            }
+        }
+        return pythonIntrepreterFileId;
+    }
+
+    void PmParser::getAddressRangeByFileId(const FileID &fileId, void *&retStartAddr, void *&retEndAddr) {
+        FileEntry &curFileEntry = getFileEntry(fileId);
+        retStartAddr = (void *) getPmEntry(curFileEntry.pmEntryRange[0].first).addrStart;
+        retEndAddr = (void *) getPmEntry(curFileEntry.pmEntryRange.back().second).addrEnd;
+    }
+
+    PmParser::PmParser() = default;
 
 
 }

@@ -1,0 +1,4 @@
+1. Do not throw C++ exception. This is because MLInsight existing codebase does not guarantees exception safety. Please use the return value to indicate error.
+2. Do not print anything to stderr/stdout (eg: Do not use cout or printf). Instead, developers should always leverage log macros defined in common/Logging.h. Otherwise the user program may crash.
+3. Do not modify the generated library name because MLInsight uses that name to check whether a library belongs to MLInsight or not.
+4. Always use signed value and convert unsigned to signed. Mixing signed with unsigned will cause more errors than the error caused by overflow.

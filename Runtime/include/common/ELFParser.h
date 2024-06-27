@@ -25,11 +25,13 @@ namespace mlinsight {
 
         bool parse(const char *elfPath);
 
+
         bool getSecHeader(const int secType, const std::string &secName, Elf64_Shdr &section);
 
-        void getExtSymbolInfo(ssize_t &relaSymId, const char *&funcName, Elf64_Word &bind, Elf64_Word &type, Elf64_Rela *& relaSection);
+        void getExtSymbolInfo(ssize_t &relaSymId, const char *&funcName, Elf64_Word &bind, Elf64_Word &type,
+                              Elf64_Rela *&relaSection);
 
-        Elf64_Addr getRelaOffset(const ssize_t &relaSymId, Elf64_Rela *& relaSection) const;
+        Elf64_Addr getRelaOffset(const ssize_t &relaSymId, Elf64_Rela *&relaSection) const;
 
         ELFParser(ELFParser &) = delete;
 
@@ -86,8 +88,11 @@ namespace mlinsight {
 
         inline bool readDynSymTable();
 
-
         bool verifyDynamicLibrary();
+        /**
+         * Clear previous parsing results
+         */
+        void clear();
     };
 
 }

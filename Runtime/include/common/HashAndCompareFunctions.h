@@ -28,7 +28,7 @@ namespace mlinsight {
      * @return
      */
     template<typename KEY_TYPE>
-    inline size_t hash(const KEY_TYPE* addr) {
+    inline size_t hash(const KEY_TYPE *addr) {
         size_t key = (size_t) addr;
         key ^= (key << 15) ^ 0xcd7dcd7d;
         key ^= (key >> 10);

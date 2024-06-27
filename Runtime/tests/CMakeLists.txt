@@ -127,6 +127,7 @@ if(${GTest_FOUND})
 #target_link_libraries(Trace-demoapps-ThreadSimultaneouslyEnd PUBLIC libWorkload pthread)
 
 
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 add_executable(unittests
         src/unittests/TestLinkedList.cpp
         src/unittests/TestHashMap.cpp
@@ -134,10 +135,17 @@ add_executable(unittests
         src/unittests/TestArray.cpp
         src/unittests/TestRingBuffer.cpp
         src/unittests/TestLazyValue.cpp
+        src/unittests/TestFlameGraph.cpp
+        ../src/common/Logging.cpp
 )
 target_link_libraries(unittests PUBLIC gtest gtest_main dl pthread)
-target_include_directories(unittests PUBLIC ../../Runtime/include)
+target_include_directories(unittests PUBLIC ../../Runtime/include  ${Python3_INCLUDE_DIRS})
 target_compile_options(unittests PRIVATE "-fno-access-control" "-fno-elide-constructors" ${TEST_FLAGS} -Werror)
+target_compile_definitions(unittests PRIVATE -DUSE_TORCH)
+# Temporary measure.
+#target_link_libraries(unittests PUBLIC mlinsight)
+#target_link_options(unittests PRIVATE "LINKER:--unresolved-symbols=ignore-all")
+
 
 else()
     message(STATUS "Unit tests are disabled because gtest not found. Please install it to enable unittest.")

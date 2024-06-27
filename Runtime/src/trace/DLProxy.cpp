@@ -6,171 +6,223 @@
 #include "common/Logging.h"
 #include "common/MemoryHeap.h"
 #include "trace/hook/HookInstaller.h"
-#include <c10/core/Allocator.h>
-#include <c10/cuda/CUDACachingAllocator.h>
 #include "common/DependencyLibVersionSpecifier.h"
+#include "trace/hook/PyHook.h"
+#include "trace/hook/HookContext.h"
+#include "trace/tool/Perfetto.h"
+#include "analyse/GlobalVariables.h"
 
-namespace mlinsight{
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
-#if TORCH_VERSION_MAJOR >= 2
-std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*> pytorch2AllocationAtomicPtr;
-extern std::atomic<c10::cuda::CUDACachingAllocator::CUDAAllocator*>* realPytorch2AllocatorPtr;
-#endif
+namespace mlinsight {
+    /**
+     * An API function that supports both 
+    */
+    void onPreDlOpen(const char *__file, int __mode, void* callerAddress){
+        if(!curContext){
+            initTLS();
+        }
 
-void *dlopen_proxy(const char *__file, int __mode) __THROWNL {
-    void *ret = dlopen(__file, __mode);
-    //INFO_LOGS("Installing on to open %s",__file);
-    //INFO_LOGS("realPytorch2AllocatorPtr=%p",realPytorch2AllocatorPtr);
+    }
 
-    if(ret){
-        //Successfully opened the library
-        //DBG_LOGS("Installing on to open %s",__file);
-        mlinsight::HookInstaller* inst=mlinsight::HookInstaller::getInstance();
-        if(!inst){
-            ERR_LOG("MLInsight hook failed because MLInsight is not initialized yet.");
+    void * onPostDlOpen(const char *__file, int __mode, void* callerAddress, void* ret){
+        if (!ret && __file != NULL) {
+            // Try agagin with relative import
+            ssize_t filePathLen = strnlen(__file, PATH_MAX);
+            if (filePathLen > 0 && __file[0] != '/') {
+                // For link system, path always starts with '/'. If starts with '.' or an alphabet then dlopen may need to search for `pwd`
+                DBG_LOG("dlopen is trying to use relative path. Push the caller id to the end of LD_PRELOAD.")
+                //todo: Currently, MLInsight has turned off the C++ API hook. That is why using this method works. Otherwise the return address would have to be retrived from MLInsight's stack.
+                void *callerAddr = callerAddress;
+                assert(callerAddr != nullptr);
+                assert(hookInstallerInstance != nullptr);
+                
+                std::string ldCallerFilePath; 
+
+                Dl_info info;
+                int dladdrRet = dladdr(callerAddr, &info);
+                if(dladdrRet){
+                    assert(info.dli_fname);
+                    ldCallerFilePath=info.dli_fname;
+                }else{
+                    hookInstallerInstance->pmParser.parsePMMap();
+                    ssize_t callerFileID = hookInstallerInstance->pmParser.findFileIdByAddr(callerAddr);
+                    hookInstallerInstance->pmParser.getFileEntry(callerFileID).filePath;
+                    ldCallerFilePath = hookInstallerInstance->pmParser.getFileEntry(callerFileID).filePath;
+                }
+                
+                ssize_t rFindLoc = ldCallerFilePath.rfind('/');
+                ldCallerFilePath = ldCallerFilePath.substr(0, rFindLoc) + "/" + __file;
+                INFO_LOGS("Replaced relative to absolute path %s", ldCallerFilePath.c_str());
+                ret = dlopen(ldCallerFilePath.c_str(), __mode);
+            }
+        }
+
+        if (callerAddress==nullptr  || !hasMainFunctionStarted || bypassCHooks == MLINSIGHT_TRUE) {
+            //Yes, it is possible to have no return address or dlopen is called before main function or dlopen is invoked by MLinsight itself.
             return ret;
         }
+        INFO_LOGS("Installing onto dlopened file %s", __file);
+        if (!isPyInterpreterInstalled) {
+            isPyInterpreterInstalled = true;
+            //todo: Assume the first dlopen to be single process
+            installAfterPythonInit();
+        }
 
-        inst->installAPI();
+        #ifdef USE_PERFETTO
+        if(initializePerfetto && !isPerfettoEnabled){
+            if(isRankParentProcess){
+                setenv("MLINSIGHT_INSTALLED_RANK",localRank,1);
+                isPerfettoEnabled = true;
+                initializePerfetto();
+                //assert(startTracing);
+                //tracingSession = startTracing();
+            } else if (pyTorchHookInstalled){
+                //Is not a pytorch rank byt pytorch is installed, it means this process is main process
+                isRankParentProcess=true;
+                localRank="-1";
 
-        return ret;
-    } else {
-        //DBG_LOGS("dlopen for %s failed. MLInsight will not install on this file.",__file);
-        return ret;
-    }
-}
-
-/**
- * Return address
-*/
-void* searchNextSymbol(void* returnAddr, const char *__restrict __name){
-    mlinsight::HookInstaller* instance=mlinsight::HookInstaller::getInstance();
-
-    void* retFuncAddress=nullptr;
-
-    //Search return address in pmParser
-    bool found = false;
-    ssize_t pmEntryId;
-    //INFO_LOGS("Find address:%p",returnAddr);
-
-    instance->pmParser.findPmEntryIdByAddr(returnAddr,pmEntryId,found);
-    if(!found){
-        //findPmEntryIdByAddr returns a lower bound, pmEntryId must -=1 to get the correct entry
-        pmEntryId-=1;
-        assert(pmEntryId>=0); 
-    }
-
-    const PMEntry & pmEntry=instance->pmParser.getPmEntry(pmEntryId);
-    //pmEntryId returns an address lower bound, the return address must be contained by the pmEntry. We perfrom a simple assertion check here.
-    assert(pmEntry.addrStart <returnAddr);
-    assert(returnAddr<pmEntry.addrEnd);
-
-    //Search symbol in subsequent libraries
-    ssize_t fileEntryArraySize=instance->pmParser.getFileEntryArraySize();
-    for(int curFileId=pmEntry.globalFileId+1;curFileId<fileEntryArraySize;++curFileId){
-            //Get fileEntry from pmParser
-        const FileEntry& fileEntry= instance->pmParser.getFileEntry(curFileId);
-        
-        //Get fileName and get fileHandle
-        //DBG_LOGS("Try to open %s",inst->pmParser.getStr(fileEntry.pathNameStartIndex));
-        void* libraryHandle = dlopen(instance->pmParser.getStr(fileEntry.pathNameStartIndex),RTLD_LAZY);
-        if(libraryHandle==nullptr){
-                
-#ifndef NDEBUG
-            if(fileEntry.valid){
-                fatalError("File is considered valid by MLInsight, but dlopen failed on existing library %s. This should be impossible.");
             }
-#endif
-            continue;
         }
+        #endif
 
-        // inst->pmParser.fileEntryArray.getSize()
-        retFuncAddress=dlsym(libraryHandle,__name);
-        if(retFuncAddress!=nullptr){
-            //DBG_LOGS("Symbol %s found in %s",__name,inst->pmParser.getStr(fileEntry.pathNameStartIndex));
-            break;
+        //INFO_LOGS("realPytorch2AllocatorPtr=%p",realPytorch2AllocatorPtr);
+
+        if (ret) {
+            //Successfully opened the library
+            //DBG_LOGS("Installing on to open %s",__file);
+            HookInstaller *inst = HookInstaller::getInstance();
+            if (!inst) {
+                ERR_LOG("MLInsight hook failed because MLInsight is not initialized yet.");
+                return ret;
+            }
+
+            inst->installOnDlOpen();
+            return ret;
+        } else {
+            DBG_LOGS("dlopen for %s failed. MLInsight will not install on this file. %d", __file, getpid());
+            return ret;
         }
     }
 
-    //if(retFuncAddress==nullptr){
-        //DBG_LOGS("Symbol %s not found",__name);
-    //}
-    return retFuncAddress;
-}
+    void *dlopen_proxy(const char *__file, int __mode) __THROWNL {
+        void *callerAddr = __builtin_return_address(0);
+        onPreDlOpen(__file,__mode, callerAddr);
+
+        void *ret = dlopen(__file, __mode);
+
+        return onPostDlOpen(__file, __mode, callerAddr, ret);
+    }
+
+    typedef void *(dlsym_t)(void *__restrict __handle, const char *__restrict __name) __THROW __nonnull ((2));
+
+    typedef void *(dlvsym_t)(void *__restrict __handle, const char *__restrict __name,
+                             const char *__restrict __version) __THROW __nonnull ((2, 3));
 
 
 /* Find the run-time address in the shared object HANDLE refers to
    of the symbol called NAME.  */
-void *dlsym_proxy(void *__restrict __handle, const char *__restrict __name) __THROW {
-    mlinsight::HookInstaller* instance=mlinsight::HookInstaller::getInstance();
-    pthread_mutex_lock(&instance->dynamicLoadingLock);
-
-     void *realFuncAddr = nullptr;
-    if(__handle==RTLD_NEXT){
-        //Special case handling since RTLD_NEXT will not yield correct results if we directly pass this parameter to dlsym.
-        void *retAddr = __builtin_return_address(0);
-        assert(retAddr!=nullptr);
-        realFuncAddr=searchNextSymbol(retAddr,__name);
-    }else{
-        realFuncAddr = dlsym(__handle, __name);
-    }
-
-    Elf64_Word bind=STB_GLOBAL;
-    Elf64_Word type=STT_FUNC;
-    
-    SymbolHookHint retSymbolHookHint;
-    instance->shouldHookThisSymbol(__name,bind,type,retSymbolHookHint);
-    if(retSymbolHookHint.realAddressPtr){
-        *(retSymbolHookHint.realAddressPtr)=realFuncAddr;
-    }
-
-    if(retSymbolHookHint.shouldHook){
-        //INFO_LOGS("dlsym API hooked: name:%s bind:%zd type:%zd addr:%p",__name,bind,type,realFuncAddr);
-           
-        if(retSymbolHookHint.addressOverride){
-            realFuncAddr=retSymbolHookHint.addressOverride;
+    void *dlsym_proxy(void *__restrict __handle, const char *__restrict __name) __THROW {
+        if (unlikely(bypassCHooks == MLINSIGHT_TRUE)) {
+            return dlsym(__handle, __name);
         }
-        //TODO: Lock protect
-        void* retAddr=nullptr;
-        if(!mlinsight::HookInstaller::getInstance()->installDlSym(realFuncAddr, retAddr)){
-            ERR_LOGS("Failed to hook on %s",__name);
-            //INFO_LOGS("thread:%p pthread_mutex_unlock(&inst->dynamicLoadingLock)",pthread_self());
-            pthread_mutex_unlock(&instance->dynamicLoadingLock);
-            return realFuncAddr;
-        }else{
-            //INFO_LOG("Dlsym Interception End");
-            //INFO_LOGS("thread:%p pthread_mutex_unlock(&inst->dynamicLoadingLock)",pthread_self());
-            pthread_mutex_unlock(&instance->dynamicLoadingLock);
-            return retAddr;
+        //print_stacktrace();
+
+        HookInstaller *instance = HookInstaller::getInstance();
+        if(!curContext){
+            initTLS();
         }
-    }else{
-         //INFO_LOGS("dlsym API NOT hooked: name:%s bind:%zd type:%zd addr:%p",__name,bind,type,realFuncAddr);
+        HookContext *curHookContextPtr = curContext;
+        
+        void *realFuncAddr = nullptr;
+
+        //todo: Currently, MLInsight has turned off the C++ API hook. That is why using this method works. Otherwise the return address would have to be retrived from MLInsight's stack.
+        void *callerAddr = __builtin_return_address(0);
+        assert(callerAddr != nullptr);
+
+        if (__handle == RTLD_NEXT) {
+            //This will be invalid if preHookInstaller is invoked because asmHookHandle replaces the return address
+            //assert(callerAddr != nullptr);
+            //realFuncAddr = searchNextSymbol<dlsym_t>(callerAddr, __name, dlsym);
+            fatalError("This branch should not hit. Check whether dlsymJumper works correctly.");
+        } else {
+            realFuncAddr = dlsym(__handle, __name);
+        }
+
+
+        void *scalerReturnAddr = nullptr;
+        instance->installOnDlSym(__name, realFuncAddr, callerAddr, scalerReturnAddr);
+        return scalerReturnAddr;
     }
-    //INFO_LOGS("thread:%p pthread_mutex_unlock(&inst->dynamicLoadingLock)",pthread_self());
-    pthread_mutex_unlock(&instance->dynamicLoadingLock);
-    return realFuncAddr;
-}
 
 #ifdef __USE_GNU
 
-//TODO: Handle this like dlopen
+    void *dlmopen_proxy(Lmid_t __nsid, const char *__file, int __mode) __THROW {
 
-void *dlmopen_proxy(Lmid_t __nsid, const char *__file, int __mode) __THROW {
-    INFO_LOGS("The \"dlmopen\" support is underway and the current MLInsight verison will not install on %s",__file);
-    //INFO_LOG("dlmopen Interception End");
-    return dlmopen(__nsid,__file,__mode);
-}
+        //todo: Handle correct private namespace
+        INFO_LOG("dlmopen Interception Start");
+        INFO_LOG("dlmopen Interception End");
+        void *rlt = dlmopen(__nsid, __file, __mode);
+        if (bypassCHooks == MLINSIGHT_TRUE) {
+            return rlt;
+        }
+        if (rlt) {
+            //Successfully opened the library
+            //DBG_LOGS("Installing on to open %s", __file);
+            HookInstaller *inst = HookInstaller::getInstance();
 
-//TODO: Handle this like dlsym
+            if (!inst) {
+                ERR_LOG("Scaler hook failed because Scaler is not initialized yet.");
+                return rlt;
+            }
 
-void *dlvsym_proxy(void *__restrict __handle,
-                   const char *__restrict __name,
-                   const char *__restrict __version)
-__THROW {
-    //INFO_LOGS("The \"dlvsym\" support is underway and the current MLInsight verison will not hook %s",__name);
-    //INFO_LOG("dlvsym Interception End");
-    return dlvsym(__handle,__name,__version);
-}
+            //Actual installation
+            inst->installOnDlOpen();
+
+            return rlt;
+        } else {
+            DBG_LOGS("dlmopen for %s failed. Scaler will not install on this file.", __file);
+            return rlt;
+        }
+
+    }
+
+    int dlclose_proxy(void *__handle) __THROWNL {
+        HookInstaller *inst = HookInstaller::getInstance();
+        if(!__handle){
+            INFO_LOGS("Waiting for debugger in PID %d",getpid());
+            while(!DEBUGGER_CONTINUE){
+                usleep(1000);
+            }
+        }
+        inst->parseRealFileId();
+        int rlt = dlclose(__handle);
+        return rlt;
+    }
+
+
+    void *dlvsym_proxy(void *__restrict __handle,
+                       const char *__restrict __name,
+                       const char *__restrict __version)
+    __THROW {
+        HookInstaller *instance = HookInstaller::getInstance();
+        void *realFuncAddr = nullptr;
+        void *callerAddr = __builtin_return_address(0);
+        assert(callerAddr != nullptr);
+        if (__handle == RTLD_NEXT) {
+            //This will be invalid if preHookInstaller is invoked because asmHookHandle replaces the return address
+            //todo: Currently, MLInsight has turned off the C++ API hook. That is why using this method works. Otherwise the return address would have to be retrived from MLInsight's stack.
+            //realFuncAddr = searchNextSymbol<dlvsym_t, const char *__restrict>(callerAddr, __name, dlvsym, __version);
+            fatalError("This branch should not hit. Check whether dlsymJumper works correctly.");
+        } else {
+            realFuncAddr = dlvsym(__handle, __name, __version);
+        }
+        void *scalerReturnAddr = nullptr;
+        instance->installOnDlSym(__name, realFuncAddr, callerAddr, scalerReturnAddr);
+        return scalerReturnAddr;
+    }
+
 
 #endif
 

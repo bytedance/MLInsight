@@ -6,7 +6,7 @@
 #include "trace/hook/HookHandlers.h"
 #include "trace/type/RecordingDataStructure.h"
 #include "trace/hook/HookContext.h"
-#include "analyse/PieChartAttributor.h"
+#include "analyse/PieChartAnalyzer.h"
 
 extern "C" {
 #define setbit(x, y) x|=(1<<y)
@@ -139,7 +139,7 @@ extern "C" {
     "movq %r9,0x38(%rsp)\n\t"  /*8 bytes*/\
     "movq %r10,0x40(%rsp)\n\t" /*8 bytes*/\
 
-#define SAVE_BYTES_PRE_plus8 "0x60" 
+#define SAVE_BYTES_PRE_plus8 "0x60"
 #define SAVE_BYTES_PRE "0x58" //0x40+0x10+0x8 (Funcid) 16 bit aligned.
 #define SAVE_BYTES_PRE_minus8 "0x50" //0x50+0x8 (GotAddr)
 #define SAVE_BYTES_PRE_minus16 "0x48" //0x50+0x10 (LoadingId)
@@ -173,9 +173,9 @@ extern "C" {
     "movq %rax,(%rsp)\n\t" /*8 bytes*/                                     \
     "movq %rdx,0x8(%rsp)\n\t" /*8 bytes*/                                  \
     "movdqu %xmm0,0x10(%rsp) \n\t"/*16bytes*/                              \
-    "movdqu %xmm1,0x20(%rsp) \n\t"/*16bytes*/                              
-    /*https://www.cs.mcgill.ca/~cs573/winter2001/AttLinux_syntax.htm*/     
-    /*"fsave 0x10(%rsp)\n\t"*/ /*108bytes*/                                
+    "movdqu %xmm1,0x20(%rsp) \n\t"/*16bytes*/
+/*https://www.cs.mcgill.ca/~cs573/winter2001/AttLinux_syntax.htm*/
+/*"fsave 0x10(%rsp)\n\t"*/ /*108bytes*/
 
 #define SAVE_BYTES_POST "0x30" /*0x20+18*/
 
@@ -199,9 +199,9 @@ extern "C" {
 void __attribute__((naked)) asmTimingHandler() {
     //todo: Calculate values based on rsp rathe than saving them to registers
     __asm__ __volatile__ (
-            /**
-            * Save the environment, mostly 
-            */
+        /**
+        * Save the environment, mostly
+        */
             SAVE_PRE
 
             /**
@@ -268,10 +268,11 @@ uint8_t *ldCallers = nullptr;
 //Return magic number definition:
 //1234: address resolved, pre-hook only (Fastest)
 //else pre+afterhook. Check hook installation in afterhook
-__attribute__((used)) void *preHookHandler(uint64_t nextCallAddr, int64_t symId,void** realAddrPtr) {
-    using namespace  mlinsight;
+__attribute__((used)) void *preHookHandler(uint64_t nextCallAddr, int64_t symId, void **realAddrPtr) {
+    using namespace mlinsight;
+    assert(curContext!=nullptr);
     HookContext *curContextPtr = curContext;
-    
+
     //Assumes _this->allExtSymbol won't change
 
     /**
@@ -304,7 +305,7 @@ __attribute__((used)) void *preHookHandler(uint64_t nextCallAddr, int64_t symId,
 
     //INFO_LOGS("[Pre Hook] Thread:%lu LoadingId:%ld Func:%ld RetAddr:%p Timestamp: %lu\n", pthread_self(),loadingId, symId, (void *) nextCallAddr, getunixtimestampms());
     //assert(curContext != nullptr);ls
-    
+
 
     /**
     * Setup environment for afterhook
@@ -315,14 +316,14 @@ __attribute__((used)) void *preHookHandler(uint64_t nextCallAddr, int64_t symId,
     curContextPtr->hookTuple[curContextPtr->indexPosi].callerAddr = nextCallAddr;
 
     mlinsight::preHookAttribution(curContextPtr);
-    
+
     bypassCHooks = MLINSIGHT_FALSE;
     return *realAddrPtr;
 }
 
 
 void *postHookHandler() {
-    using namespace  mlinsight;
+    using namespace mlinsight;
     bypassCHooks = MLINSIGHT_TRUE;
     HookContext *curContextPtr = curContext;
     assert(curContext != nullptr);
@@ -331,14 +332,14 @@ void *postHookHandler() {
     void *callerAddr = (void *) curContextPtr->hookTuple[curContextPtr->indexPosi].callerAddr;
 
 
-    if(symbolId>=curContextPtr->recordArray.getSize()){
+    if (symbolId >= curContextPtr->recordArray.getSize()) {
         curContextPtr->recordArray.allocateArray(symbolId + 1 - curContextPtr->recordArray.getSize());
     }
 
     int64_t &c = curContextPtr->recordArray.internalArray[symbolId].count;
 
 
-    if(symbolId>=curContextPtr->recordArray.getSize()){
+    if (symbolId >= curContextPtr->recordArray.getSize()) {
         curContextPtr->recordArray.allocateArray(symbolId + 1 - curContextPtr->recordArray.getSize());
     }
 
@@ -382,7 +383,7 @@ void __attribute__((used, naked, noinline)) callIdSaverScheme3() {
             "jz SKIP\n\t"
 
             "pushq %r10\n\t"
-            
+
             "movq 0x11223344(%r11),%r11\n\t" //Fetch recordArray.internalArray's address  -> r11
             "movq 0x11223344(%r11),%r10\n\t" //Fetch recordArray.internalArray[symId].count -> r10
             "addq $1,%r10\n\t" //count + 1
@@ -415,5 +416,32 @@ void __attribute__((used, naked, noinline)) callIdSaverScheme3() {
             "jmpq *%r11\n\t"
             );
 }
+
+void __attribute__((used, naked, noinline)) callIdSaverScheme4() {
+    __asm__ __volatile__ (
+            /**
+             * Access TLS, make sure it's initialized
+             */
+            "movq $0x1122334455667788,%rcx\n\t" //Move the pointer of the original function to rdx (4th parameter)
+            "movq $0x1122334455667788,%r11\n\t" //Jump to the generalPyHookFunction
+            "jmpq *%r11\n\t"
+            );
+}
+
+void __attribute__((used, naked, noinline)) callIdSaverScheme5() {
+    __asm__ __volatile__ (
+            /**
+             * Access TLS, make sure it's initialized
+             */
+            "movq $0x1122334455667788,%r11\n\t" //dlsym_proxy
+            "cmpq $0xffffffffffffffff,%rdi\n\t" 
+            "jz SKIP_DLSYM\n\t"
+            "jmpq *%r11\n\t"
+            "SKIP_DLSYM:"
+            "movq $0x1122334455667788,%r11\n\t" //dlsym
+            "jmpq *%r11\n\t"
+            );
+}
+
 
 }

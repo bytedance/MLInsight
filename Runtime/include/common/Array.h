@@ -39,7 +39,7 @@ namespace mlinsight {
                 internalArray = (T *) malloc(internalArrSize * sizeof(T));
 
                 if(!internalArray){
-                    fatalError("Cannot allocateArray memory for internalArray");
+                    fatalError("Cannot allocateArray driverMemRecord for internalArray");
                 }
                 assert(internalArray != nullptr);
                 memset(internalArray, 0, internalArrSize * sizeof(T));
@@ -56,7 +56,7 @@ namespace mlinsight {
             assert(&rho!=this);
             internalArray = (T *) malloc(rho.internalArrSize * sizeof(T));
             for(int i=0;i<internalArrSize;++i){
-                new (internalArray+i*sizeof(T)) T(rho.internalArray[i]);
+                new (internalArray+i) T(rho.internalArray[i]);
             }        
         }
 
@@ -108,9 +108,9 @@ namespace mlinsight {
         }
 
         inline T &operator[](const ssize_t &index) {
-            if(!(0 <= index && index < size)){
-                INFO_LOGS("%zd,%zd",index,size);
-            }
+//            if(!(0 <= index && index < size)){
+//                INFO_LOGS("%zd,%zd",index,size);
+//            }
             assert(0 <= index && index < size);
             assert(internalArray != nullptr);
             return internalArray[index];
@@ -131,9 +131,9 @@ namespace mlinsight {
 
         /**
          * Insert at index and mlinsight::Array will return a reference to an object initialized with default arguments.
-         * This function will perform no memory copy.
+         * This function will perform no driverMemRecord copy.
          * @param index The new element will be inserted after index.
-         * @return Uninitialized memory
+         * @return Uninitialized driverMemRecord
          */
         template<typename... Args>
         inline T& insert(ssize_t index, Args&&... args) {
@@ -144,10 +144,10 @@ namespace mlinsight {
         }
 
         /**
-         * Insert at index, but mlinsight::Array will return uninitialized memory.
-         * This function is useful if the user wants to control memory construction.
+         * Insert at index, but mlinsight::Array will return uninitialized driverMemRecord.
+         * This function is useful if the user wants to control driverMemRecord construction.
          * @param index The new element will be inserted after index.
-         * @return Uninitialized memory
+         * @return Uninitialized driverMemRecord
          */
         inline T* insertLazyConstruct(ssize_t index) {
             assert(0 <= index && index <= size);
@@ -178,9 +178,9 @@ namespace mlinsight {
 
         /**
          * Allocate a bunch of objects and return an array.
-         * There will be no extra memory copy. Objects will be constructed with the default constructor.
+         * There will be no extra driverMemRecord copy. Objects will be constructed with the default constructor.
          * @param index The new element will be inserted after index.
-         * @return Uninitialized memory
+         * @return Uninitialized driverMemRecord
          */
         template<typename... Args>
         T* allocateArray(ssize_t amount,Args... args) {
@@ -197,9 +197,9 @@ namespace mlinsight {
         }
         /**
          * Allocate a bunch of objects and return an array.
-         * But mlinsight::Array will return uninitialized memory to ensure there is no memory copy.
+         * But mlinsight::Array will return uninitialized driverMemRecord to ensure there is no driverMemRecord copy.
          * @param index The new element will be inserted after index.
-         * @return Uninitialized memory
+         * @return Uninitialized driverMemRecord
          */
         T* allocateArrayRaw(ssize_t amount) {
             ssize_t requiredSize = size + amount;
@@ -222,7 +222,7 @@ namespace mlinsight {
         }
 
         /**
-         * Insert value at the back of this array. But returns unintialized memory.
+         * Insert value at the back of this array. But returns unintialized driverMemRecord.
          * See insertLazyConstruct.
          */
         inline T* pushBackRaw() {
@@ -261,7 +261,7 @@ namespace mlinsight {
 
             internalArray = (T *) malloc(newSize * sizeof(T));
             if(!internalArray){
-                INFO_LOG("Cannot allocateArray memory");
+                INFO_LOG("Cannot allocateArray driverMemRecord");
                 exit(-1);
                 return false;
             }

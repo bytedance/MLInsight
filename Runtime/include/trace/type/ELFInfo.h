@@ -9,12 +9,13 @@
 
 namespace mlinsight {
 /**
-* ELF image (ELF file in memory) information.
+* ELF image (ELF file in driverMemRecord) information.
 */
     struct ELFImgInfo {
         uint8_t *pltStartAddr;
         uint8_t *pltSecStartAddr;
         uint8_t *gotStartAddr;
+        uint8_t *gotPltStartAddr;
         int64_t firstSymIndex;
         bool valid = false;
     };

@@ -86,12 +86,19 @@ TEST(Array, erase) {
 
 TEST(Array, copyconstructor) {
     Array<int> myArray;
-    for (int i = 0; i <= 4; ++i)
+    for (int i = 0; i <= 4; ++i) {
         myArray.pushBack(i);
+    }
+    for (int i = 0; i <= 4; ++i) {
+        ASSERT_EQ(myArray[i], i);
+    }
 
     //Test copy constructor
     Array<int> myList1(myArray);
     ASSERT_TRUE(myList1.getSize() == myArray.getSize());
+    for (int i = 0; i <= 4; ++i) {
+        ASSERT_EQ(myList1[i], i);
+    }
 
     //Modify copied list
     myList1.erase(0);
@@ -109,13 +116,20 @@ TEST(Array, copyconstructor) {
 
 TEST(Array, copyassignment) {
     Array<int> myArray;
-    for (int i = 0; i <= 4; ++i)
+    for (int i = 0; i <= 4; ++i) {
         myArray.pushBack(i);
+    }
+    for (int i = 0; i <= 4; ++i) {
+        ASSERT_EQ(myArray[i], i);
+    }
 
     //Test copy constructor
     Array<int> myArrayCpy;
-    myArrayCpy=myArray;
+    myArrayCpy = myArray;
     ASSERT_TRUE(myArrayCpy.getSize() == myArray.getSize());
+    for (int i = 0; i <= 4; ++i) {
+        ASSERT_EQ(myArrayCpy[i], i);
+    }
 
     //Modify copied list
     myArrayCpy.erase(0);

@@ -23,11 +23,9 @@
 #include <stdlib.h>
 #include <dlfcn.h>
 #include "Logging.h"
-#include "common/CallStack.h"
-
+#include <fstream>
 namespace mlinsight {
-    #define CPP_CALL_STACK_LEVEL 20
-    #define PYTHON_CALL_STACK_LEVEL 20
+    extern bool DEBUGGER_CONTINUE;
 
     inline int64_t getunixtimestampms() {
         uint32_t lo, hi;
@@ -130,22 +128,18 @@ namespace mlinsight {
     bool collapseStrSpace(const std::string &oriString,std::string& outString);
 
     void print_stacktrace(void);
-    void print_stacktrace(std::ofstream & output);
+    void print_stacktrace(std::ostream & output);
 
     /**
      * Debug function. Print pystacktrace.
      */
     void print_pystacktrace(void);
 
-    void printPythonStackTrace();
     /**
-     * @brief Collecting the stack trace and saving it to the memory pointed by ptr
-     * Each level will be saved to one entry, not larger than CPP_CALL_STACK_LEVEL
-     * This function will automatically change CallStack::levels to min(CallStack::levels.)
-     *
-     * @return: the number of stack frames
+     * Similar to print_pystacktrace, but actually prints both C/C++ on top of the Python trace
      */
-    void getCppStacktrace(CallStack<void*, CPP_CALL_STACK_LEVEL>& retCallStack);
+    void print_hybridstacktrace();
+
 
     //Copied from pytorch to just show that the output is consistent with the error message. We can delete it.
     inline std::string format_size(uint64_t size) {
@@ -178,9 +172,31 @@ namespace mlinsight {
         return std::move(procName);
     }
 
+    extern bool pythonIsAvailable;
     inline bool isPythonAvailable(){
-        return dlsym(RTLD_DEFAULT, "Py_IsInitialized") != nullptr;
+        if(!pythonIsAvailable){
+            pythonIsAvailable = (dlsym(RTLD_DEFAULT, "Py_IsInitialized") != nullptr);
+        }
+        return pythonIsAvailable;
     }
+
+    /**
+     * A data struct used to cross-check mlinsight return results with
+     */
+    struct CuptiCrossChecker{
+        bool cuptiCrossCheckingEnabled=false;
+        ssize_t cuMemAllocCUPTISize=0;
+        ssize_t cuMemAllocMLInsightSize=0;
+        void* cuMemAllocMlInsightPtr=nullptr;
+        void* cuMemAllocCuptiPtr=nullptr;
+        void* cuMemFreeMlInsightPtr=nullptr;
+        void* cuMemFreeCuptiPtr=nullptr;
+        bool insideMLInsightCuMemAllocProxy=false;
+        bool insideMLInsightCuMemFreeProxy=false;
+
+
+    };
+
 
 #ifdef CUDA_ENABLED
 

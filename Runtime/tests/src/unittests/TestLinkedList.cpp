@@ -208,7 +208,7 @@ TEST(LinkedList, moveconstructor) {
 
     //Test copy constructor
     LinkedList_t myList1(std::move(*myList));
-    //Manually trigger deconstruction of moved object, since object have been moved, the deconstructor will not free memory.
+    //Manually trigger deconstruction of moved object, since object have been moved, the deconstructor will not free driverMemRecord.
     delete myList;
     myList=nullptr;
 

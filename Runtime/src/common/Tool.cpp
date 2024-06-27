@@ -16,6 +16,7 @@
 #include <ceval.h>
 
 #include "common/Tool.h"
+#include "trace/hook/HookInstaller.h"
 
 namespace mlinsight {
     std::vector<ssize_t> findStrSplit(std::string &srcStr, char splitChar) {
@@ -56,7 +57,7 @@ namespace mlinsight {
         return splitPoints;
     }
 
-    long int getFileSize(FILE *file) {
+    long int getFileSize(FILE * file) {
         //The type of this return value is used by ftell. So it should be universal
         if (fseek(file, 0L, SEEK_END) != 0) {
             ERR_LOGS("fseek failed because: %s", strerror(errno));
@@ -134,6 +135,9 @@ namespace mlinsight {
         return j == keywordSize ? beg : nullptr;
     }
 
+    /**
+     * This function only applies to page-aligned memory.
+    */
     bool adjustMemPerm(void *startPtr, void *endPtr, int prem) {
         //Get page allocatedSize
         ssize_t pageSize = sysconf(_SC_PAGESIZE);
@@ -148,7 +152,7 @@ namespace mlinsight {
                 (ceil(((uint8_t *) endPtrBound - (uint8_t *) startPtrBound) / (double) pageSize)) * pageSize;
         //DBG_LOGS("Real addr from:%p to:%p", startPtrBound, endPtrBound);
         if (mprotect(startPtrBound, memoryLength, prem) != 0) {
-            ERR_LOGS("Could not change the process memory permission at %p-%p because: %s", startPtrBound, endPtrBound,
+            ERR_LOGS("Could not change the process driverMemRecord permission at %p-%p because: %s", startPtrBound, endPtrBound,
                      strerror(errno));
             signal(SIGINT, 0);
             return false;
@@ -207,7 +211,7 @@ namespace mlinsight {
 
     /* Obtain a backtrace and print it to stdout. */
     void print_stacktrace(void) {
-#define CALL_STACK_NUM 15
+#define CALL_STACK_NUM 4096
         void *array[CALL_STACK_NUM];
         char **strings;
         int size, i;
@@ -230,7 +234,7 @@ namespace mlinsight {
         free(strings);
     }
 
-    void print_stacktrace(std::ofstream &output) {
+    void print_stacktrace(std::ostream &output) {
         using namespace std;
         void *array[CPP_CALL_STACK_LEVEL];
         char **strings;
@@ -249,33 +253,121 @@ namespace mlinsight {
         free(strings);
     }
 
-    void print_pystacktrace(){
-        if(isPythonAvailable() && Py_IsInitialized()){
+    extern int PyCodeExtra_Index;
+
+    void print_pystacktrace() {
+        if (isPythonAvailable() && Py_IsInitialized()) {
             //        //Child paorcess
             PyGILState_STATE gstate;
             gstate = PyGILState_Ensure();
-            PyFrameObject* currentFrame= PyEval_GetFrame();
-            int i=0;
-            while(currentFrame!=NULL){
+            PyFrameObject *currentFrame = PyEval_GetFrame();
+            int i = 0;
+            OUTPUT("=========PYCALLSTACK.LEVELS.START\n");
+            while (currentFrame != NULL) {
 
-                const char* pythonSourceFileName=PyUnicode_AsUTF8(currentFrame->f_code->co_filename);
-                const char* pythonFunctionName=PyUnicode_AsUTF8(currentFrame->f_code->co_name);
+                const char *pythonSourceFileName = PyUnicode_AsUTF8(currentFrame->f_code->co_filename);
+                const char *pythonFunctionName = PyUnicode_AsUTF8(currentFrame->f_code->co_name);
 
-                DBG_LOGS("%d Function: %s Line: %s:%d",i++,pythonFunctionName,
-                          pythonSourceFileName,PyFrame_GetLineNumber(currentFrame));
+                PythonFrameExtra_t *retPyCodeExtra;
+                int pyCodeExtraRlt = _PyCode_GetExtra((PyObject *) currentFrame->f_code, PyCodeExtra_Index,
+                                                      (void **) &retPyCodeExtra);
+
+                HookInstaller *instance = HookInstaller::getInstance();
+                if (retPyCodeExtra) {
+                    OUTPUTS("%d Function: %s Line: %s:%d Package: %s\n", i++, pythonFunctionName,
+                            pythonSourceFileName, PyFrame_GetLineNumber(currentFrame),
+                            instance->pyModuleInfoMap[retPyCodeExtra->globalPyModuleId].moduleName.c_str());
+                } else {
+                    OUTPUTS("%d Function: %s Line: %s:%d Package: NONE\n", i++, pythonFunctionName,
+                            pythonSourceFileName, PyFrame_GetLineNumber(currentFrame));
+                }
                 //Go to next frame
-                currentFrame=currentFrame->f_back;
+                currentFrame = currentFrame->f_back;
             }
-
-            //INFO_LOGS("Collecting callstacks with level %d\n", callstack.levels);
+            OUTPUT("=========PYCALLSTACK.LEVELS.END\n");
             //Release GIL
             PyGILState_Release(gstate);
-        }else{
+        } else {
             ERR_LOG("Process %d is not a python process so MLInsight cannot print python process");
         }
     }
 
-    void getCppStacktrace(CallStack<void *, CPP_CALL_STACK_LEVEL> &retCallStack) {
-        retCallStack.levels = backtrace(retCallStack.array, CPP_CALL_STACK_LEVEL);
+    extern void *pythonInterpreter_text_begin;
+    extern void *pythonInterpreter_text_end;
+    bool pythonIsAvailable = false;
+    bool DEBUGGER_CONTINUE=false;
+
+    void print_hybridstacktrace() {
+        if (isPythonAvailable() && Py_IsInitialized()) {
+            //        //Child paorcess
+            PyGILState_STATE gstate;
+            gstate = PyGILState_Ensure();
+            PyFrameObject *currentFrame = PyEval_GetFrame();
+            int i = 0;
+            OUTPUT("=========HYBRIDSTACK.LEVELS.START\n");
+
+            //Find how many levels of stacks are below the first Python interpreter stack.
+            using namespace std;
+            const int hybridCStackLevel = 60;
+            void *array[hybridCStackLevel];
+            int size = backtrace(array, hybridCStackLevel);
+            int bottomCCallStackSize = 0;
+
+            for (int i = 0; i < size; ++i) {
+                if (pythonInterpreter_text_begin <= array[i] && array[i] <= pythonInterpreter_text_end) {
+                    //Is python interpreter stack frame
+                    bottomCCallStackSize = i;
+                    break;
+                }
+            }
+            if(bottomCCallStackSize==0){
+                bottomCCallStackSize=size;
+            }
+
+            //Insert C stack into
+
+            char **strings = backtrace_symbols(array, bottomCCallStackSize);
+            for (int i = 0; i < bottomCCallStackSize; ++i) {
+                OUTPUTS("%s\n", strings[i]);
+            }
+            free(strings);
+
+//            bool findProxyFunc=false;
+            //Add the python part
+            while (currentFrame != NULL) {
+
+                const char *pythonSourceFileName = PyUnicode_AsUTF8(currentFrame->f_code->co_filename);
+                const char *pythonFunctionName = PyUnicode_AsUTF8(currentFrame->f_code->co_name);
+
+                PythonFrameExtra_t *retPyCodeExtra;
+                int pyCodeExtraRlt = _PyCode_GetExtra((PyObject *) currentFrame->f_code, PyCodeExtra_Index,
+                                                      (void **) &retPyCodeExtra);
+//                if(strncmp(pythonFunctionName,"proxyFunc",9)==0){
+//                    findProxyFunc=true;
+//                }
+
+                HookInstaller *instance = HookInstaller::getInstance();
+                if (retPyCodeExtra) {
+                    OUTPUTS("%d Function: %s Line: %s:%d Package: %s\n", i++, pythonFunctionName,
+                            pythonSourceFileName, PyFrame_GetLineNumber(currentFrame),
+                            instance->pyModuleInfoMap[retPyCodeExtra->globalPyModuleId].moduleName.c_str());
+                } else {
+                    OUTPUTS("%d Function: %s Line: %s:%d Package: NONE\n", i++, pythonFunctionName,
+                            pythonSourceFileName, PyFrame_GetLineNumber(currentFrame));
+                }
+                //Go to next frame
+                currentFrame = currentFrame->f_back;
+            }
+//            if(!findProxyFunc){
+//                OUTPUT("WARNING: Did not see proxyFunc from the stack\n");
+//            }
+            OUTPUT("=========HYBRIDSTACK.LEVELS.END\n");
+            //Release GIL
+            PyGILState_Release(gstate);
+        } else {
+            ERR_LOG("Process %d is not a python process so MLInsight cannot print python process");
+        }
     }
+
+
 }

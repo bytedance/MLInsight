@@ -1,5 +1,4 @@
 /*
-
 @author: Steven (Jiaxun) Tang <jtang@umass.edu>
 */
 #ifndef MLINSIGHT_LOGICALCLOCK_H

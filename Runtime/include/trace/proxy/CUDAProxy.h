@@ -10,28 +10,19 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 
-namespace mlinsight{
-typedef unsigned int CUdeviceptr_v1; //Copied from CUDA
-extern pthread_mutex_t pytorchMemoryManagementLock;
+namespace mlinsight {
+    typedef unsigned int CUdeviceptr_v1; //Copied from CUDA
 
-CUresult CUDAAPI cuGetProcAddress_proxy(const char *symbol, void **pfn, int cudaVersion, cuuint64_t flags);
+    CUresult CUDAAPI cuGetProcAddress_proxy(const char *symbol, void **pfn, int cudaVersion, cuuint64_t flags);
 
+    CUresult CUDAAPI cuMemAlloc_proxy(CUdeviceptr *dptr, size_t bytesize);
 
-CUresult CUDAAPI cuMemcpyHtoD_proxy(CUdeviceptr_v1 dstDevice, const void *srcHost, unsigned int ByteCount);
-CUresult CUDAAPI cuMemAlloc_proxy(CUdeviceptr *dptr, size_t 	bytesize);	
-CUresult CUDAAPI cuMemAllocHost_proxy(void ** pptr, size_t 	bytesize);	
-CUresult CUDAAPI cuMemHostAlloc_proxy(void ** ptr, size_t bytesize, unsigned int  flags);	 
-CUresult cuMemAllocManaged_proxy ( CUdeviceptr* dptr, size_t bytesize, unsigned int  flags );
-CUresult cuMemFree_proxy (CUdeviceptr dptr);
-CUresult cuMemFreeHost_proxy (void * ptr);
-CUresult cuMemFreeAsync_proxy ( CUdeviceptr dptr, CUstream hStream );
-CUresult cuMemAddressFree_proxy ( CUdeviceptr ptr, size_t size );
-CUresult cuMemHostUnregister_proxy ( void* ptr );
-CUresult cuMemUnmap_proxy ( CUdeviceptr ptr, size_t size );
+    CUresult cuMemFree_proxy(CUdeviceptr dptr);
+
 
 #if CUDART_VERSION > 12010
-CUresult cuMemCreate_proxy(CUmemGenericAllocationHandle *handle, size_t size, const CUmemAllocationProp *prop, unsigned long long flags);
-CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags);
+    CUresult cuMemCreate_proxy(CUmemGenericAllocationHandle *handle, size_t size, const CUmemAllocationProp *prop, unsigned long long flags);
+    CUresult cuMemMap_proxy(CUdeviceptr ptr, size_t size, size_t offset, CUmemGenericAllocationHandle handle, unsigned long long flags);
 
 
 #endif

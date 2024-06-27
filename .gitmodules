@@ -1,0 +1,3 @@
+[submodule "Runtime/lib/perfetto"]
+	path = Runtime/lib/perfetto
+	url = https://code.byted.org/steven.tang01/Perfetto_temporary.git

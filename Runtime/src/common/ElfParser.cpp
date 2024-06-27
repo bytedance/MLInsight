@@ -13,13 +13,12 @@
 #include "trace/type/RecordingDataStructure.h"
 
 namespace mlinsight {
-    FileID libc10_cuda_fileId;
-    void * libc10_cuda_text_begin; 
-    void * libc10_cuda_text_end; 
-    
+
     bool ELFParser::parse(const char *elfPath) {
+        this->clear();
+
         /**
-         * Release previous memory allocations
+         * Release previous driverMemRecord allocations
          */
         if (secHdr) {
             delete secHdr;
@@ -70,14 +69,12 @@ namespace mlinsight {
             return false;
         }
 
-        if (!readRelaPLTEntries()) {
+        bool hasRelaPLT = readRelaPLTEntries();
+        bool hasRelaDyn = readRelaDYNEntries();
+
+        if (!hasRelaPLT && !hasRelaDyn) {
             return false;
         }
-
-        if (!readRelaDYNEntries()) {
-            return false;
-        }
-
 
         return true;
     }
@@ -128,7 +125,7 @@ namespace mlinsight {
 
         secHdrStrtbl = static_cast<const char *>(malloc(sizeof(char) * strTblSecHdr.sh_size));
         if (!secHdrStrtbl) {
-            fatalError("Failed to allocate memory for secStrtbl");
+            fatalError("Failed to allocate driverMemRecord for secStrtbl");
             return false;
         }
         if (!fread((void *) secHdrStrtbl, 1, strTblSecHdr.sh_size, file)) {
@@ -166,7 +163,7 @@ namespace mlinsight {
             return false;
         }
 
-        //Do not re-allocate memory if the current memory region is larger
+        //Do not re-allocate driverMemRecord if the current driverMemRecord region is larger
 
         if (curSecHdr.sh_size > oriSecSize) {
             if (retAddr) {
@@ -174,10 +171,10 @@ namespace mlinsight {
             }
             retAddr = malloc(curSecHdr.sh_size);
             if (!retAddr) {
-                fatalError("Cannot allocate memory for section header");
+                fatalError("Cannot allocate driverMemRecord for section header");
             }
         } else {
-            //Use the old memory section
+            //Use the old driverMemRecord section
         }
 
 
@@ -194,7 +191,8 @@ namespace mlinsight {
 
     }
 
-    void ELFParser::getExtSymbolInfo(ssize_t &relaSymId, const char *&funcName, Elf64_Word &bind, Elf64_Word &type,Elf64_Rela *& relaSection) {
+    void ELFParser::getExtSymbolInfo(ssize_t &relaSymId, const char *&funcName, Elf64_Word &bind, Elf64_Word &type,
+                                     Elf64_Rela *&relaSection) {
         ssize_t relIdx = ELF64_R_SYM(relaSection[relaSymId].r_info);
         ssize_t strIdx = dynSymTbl[relIdx].st_name;
         //DBG_LOGS("%s:%zd", dynStrTbl + strIdx,strIdx);
@@ -202,8 +200,6 @@ namespace mlinsight {
         bind = ELF64_ST_BIND(dynSymTbl[relIdx].st_info);
         type = ELF64_ST_TYPE(dynSymTbl[relIdx].st_info);
     }
-
-    
 
 
     inline bool ELFParser::readDynStrTable() {
@@ -242,12 +238,12 @@ namespace mlinsight {
     inline bool ELFParser::readRelaPLTEntries() {
         Elf64_Shdr curHeader;
         if (!getSecHeader(SHT_RELA, ".rela.plt", curHeader)) {
-            //ERR_LOG("Cannot read .rela.plt header");
+            DBG_LOG("Cannot read .rela.plt header");
             return false;
         }
 
         if (!readSecContent(curHeader, (void *&) relaPLTSection, relaPLTEntrySize)) {
-            ERR_LOG("Cannot read .rela.plt");
+            DBG_LOG("Cannot read .rela.plt");
             return false;
         }
         assert(curHeader.sh_entsize == sizeof(Elf64_Rela));
@@ -258,12 +254,12 @@ namespace mlinsight {
     inline bool ELFParser::readRelaDYNEntries() {
         Elf64_Shdr curHeader;
         if (!getSecHeader(SHT_RELA, ".rela.dyn", curHeader)) {
-            ERR_LOG("Cannot read .rela.dyn header");
+            DBG_LOG("Cannot read .rela.dyn header");
             return false;
         }
 
         if (!readSecContent(curHeader, (void *&) relaDYNSection, relaDYNEntrySize)) {
-            ERR_LOG("Cannot read .rela.plt");
+            DBG_LOG("Cannot read .rela.plt");
             return false;
         }
         assert(curHeader.sh_entsize == sizeof(Elf64_Rela));
@@ -283,7 +279,7 @@ namespace mlinsight {
         return false;
     }
 
-    Elf64_Addr ELFParser::getRelaOffset(const ssize_t &relaSymId, Elf64_Rela *& relaSection) const {
+    Elf64_Addr ELFParser::getRelaOffset(const ssize_t &relaSymId, Elf64_Rela *&relaSection) const {
         return relaSection[relaSymId].r_offset;
     }
 
@@ -296,18 +292,18 @@ namespace mlinsight {
 
 
 #ifndef NDEBUG
-        //        //Compare bit by bit between ret and content read from file.
-        //
-        //        uint8_t *pltFromFile = nullptr;
-        //        if (!readSecContent(curHeader,
-        //                            reinterpret_cast<void *&>(pltFromFile), 0)) {
-        //            fatalError("Cannot parse .plt from elf file");
-        //        }
-        //
-        //        for (int i = 0; i < min<Elf64_Xword>(16 * 4, curHeader.sh_size); ++i) {
-        //            assert(pltFromFile[i] == *((uint8_t *) ret + i));
-        //        }
-        //        free(pltFromFile);
+    //        //Compare bit by bit between ret and content read from file.
+    //
+    //        uint8_t *pltFromFile = nullptr;
+    //        if (!readSecContent(curHeader,
+    //                            reinterpret_cast<void *&>(pltFromFile), 0)) {
+    //            fatalError("Cannot parse .plt from elf file");
+    //        }
+    //
+    //        for (int i = 0; i < min<Elf64_Xword>(16 * 4, curHeader.sh_size); ++i) {
+    //            assert(pltFromFile[i] == *((uint8_t *) ret + i));
+    //        }
+    //        free(pltFromFile);
 #endif
 //        return ret;
 //    }
@@ -335,6 +331,40 @@ namespace mlinsight {
         }
 
         return foundProgHdr;
+    }
+
+    void ELFParser::clear(){
+
+        this->secHdr = nullptr;
+        this->secHdrSize = 0;
+
+        this->progHdr = nullptr;
+        this->progHdrSize = 0;
+
+        this->secHdrStrtbl = nullptr;//Secion Name String Table
+
+        this->dynSection = nullptr;
+        this->dynSecSize = 0;
+
+        this->relaPLTSection = nullptr;
+        this->relaPLTEntrySize = 0;
+
+        this->relaDYNSection = nullptr;
+        this->relaDYNEntrySize = 0;
+
+        this->pltSection = nullptr;
+        this->pltEntrySize = 0;
+
+        this->gotSection = nullptr;
+        this->gotEntrySize = 0;
+
+        this->dynSymTbl = nullptr;
+        this->dynSymTblSize = 0;
+
+        this->dynStrTbl = nullptr;
+        this->dynStrTblSize = 0;
+
+        memset(&this->elfHdr,0,sizeof(Elf64_Ehdr));
     }
 
 

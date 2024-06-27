@@ -7,7 +7,7 @@
 
 #include "trace/type/RecordingDataStructure.h"
 
-extern "C"{
+extern "C" {
 
 
 extern uint8_t *callIdSavers;
@@ -21,7 +21,7 @@ void __attribute__((naked)) asmTimingHandler();
 * @param oriRBPLoc The rsp location before saving all registers
 * @return Original function pointer
 */
-__attribute__((used)) void *preHookHandler(uint64_t nextCallAddr,int64_t symId,void** realAddrPtr);
+__attribute__((used)) void *preHookHandler(uint64_t nextCallAddr, int64_t symId, void **realAddrPtr);
 
 
 __attribute__((used)) void *postHookHandler();

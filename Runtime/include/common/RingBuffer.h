@@ -16,7 +16,7 @@ namespace mlinsight {
     class RingBuffer {
     private:
         ssize_t internalArrSize;
-        VALUE_TYPE *buffer=nullptr;
+        VALUE_TYPE *buffer = nullptr;
         ssize_t head = 0;
         ssize_t tail = 0;
 
@@ -24,10 +24,11 @@ namespace mlinsight {
 
     public:
 
-        RingBuffer(ssize_t internalArrSize) : internalArrSize(internalArrSize+1) {
+        RingBuffer(ssize_t internalArrSize) : internalArrSize(internalArrSize + 1) {
             //There should be one more element that stores tail node
-            buffer = reinterpret_cast<VALUE_TYPE*>(mmap(NULL, this->internalArrSize * sizeof(VALUE_TYPE), PROT_READ | PROT_WRITE,
-                                                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+            buffer = reinterpret_cast<VALUE_TYPE *>(mmap(NULL, this->internalArrSize * sizeof(VALUE_TYPE),
+                                                         PROT_READ | PROT_WRITE,
+                                                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
         }
 
         /**
@@ -35,8 +36,8 @@ namespace mlinsight {
          */
         RingBuffer(const RingBuffer &rho) : internalArrSize(rho.internalArrSize) {
             buffer = reinterpret_cast<VALUE_TYPE *>(malloc(rho.internalArrSize * sizeof(VALUE_TYPE)));
-            for(int i=0;i<internalArrSize;++i){
-                new (buffer+i) VALUE_TYPE(rho.buffer[i]);
+            for (int i = 0; i < internalArrSize; ++i) {
+                new(buffer + i) VALUE_TYPE(rho.buffer[i]);
             }
         }
 
@@ -87,25 +88,25 @@ namespace mlinsight {
         }
 
         template<typename ...Args>
-        inline VALUE_TYPE& enqueue(Args&&... args) {
-            VALUE_TYPE * rawMemory=enqueueLazyConstruct();
-            new (rawMemory) VALUE_TYPE(std::forward<Args>(args)...);
+        inline VALUE_TYPE &enqueue(Args &&... args) {
+            VALUE_TYPE *rawMemory = enqueueLazyConstruct();
+            new(rawMemory) VALUE_TYPE(std::forward<Args>(args)...);
             return *rawMemory;
         }
 
         // Add an item to this circular buffer.
-        inline VALUE_TYPE* enqueueLazyConstruct() {
+        inline VALUE_TYPE *enqueueLazyConstruct() {
             assert(!isFull());
-            VALUE_TYPE *ret = reinterpret_cast<VALUE_TYPE*>(&buffer[tail]);
+            VALUE_TYPE *ret = reinterpret_cast<VALUE_TYPE *>(&buffer[tail]);
             tail = (tail + 1) % internalArrSize;
             return ret;
         }
 
         template<typename ...Args>
-        inline VALUE_TYPE& forceEnqueue(Args&&... args) {
-            VALUE_TYPE* rawMemory=forceEnqueueLazyConstruct();
-            if(rawMemory){
-                new (rawMemory) VALUE_TYPE(std::forward<Args>(args)...);
+        inline VALUE_TYPE &forceEnqueue(Args &&... args) {
+            VALUE_TYPE *rawMemory = forceEnqueueLazyConstruct();
+            if (rawMemory) {
+                new(rawMemory) VALUE_TYPE(std::forward<Args>(args)...);
             }
             return rawMemory;
         }
@@ -113,16 +114,16 @@ namespace mlinsight {
         /*
         * Add an item to this buffer. If buffer is full, dequeue first and then enqueue.
         */
-        inline VALUE_TYPE& forceEnqueueLazyConstruct() {
+        inline VALUE_TYPE &forceEnqueueLazyConstruct() {
             if (isFull()) {
                 head = (head + 1) % internalArrSize;
             }
             return *enqueueLazyConstruct();
         }
 
-        inline VALUE_TYPE& dequeue() {
+        inline VALUE_TYPE &dequeue() {
             assert(!isEmpty());
-            VALUE_TYPE *ret =reinterpret_cast<VALUE_TYPE*>(&buffer[head]);
+            VALUE_TYPE *ret = reinterpret_cast<VALUE_TYPE *>(&buffer[head]);
             head = (head + 1) % internalArrSize;
             return *ret;
         }
@@ -183,7 +184,7 @@ namespace mlinsight {
     protected:
         ssize_t curHead = 0;
 
-        RingBuffer<VALUE_TYPE> *ringBuffer=nullptr;
+        RingBuffer<VALUE_TYPE> *ringBuffer = nullptr;
 
         bool hasNext(ssize_t curPosi) {
             return curPosi != ringBuffer->tail;

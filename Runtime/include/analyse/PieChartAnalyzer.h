@@ -24,17 +24,19 @@ namespace mlinsight {
         curContextPtr->recordArray.internalArray[symbolId].totalClockCycles += clockCyclesDuration;
     }
 
-    inline uint64_t pyPreHookAttribution(HookContext* curContextPtr){
+    inline uint64_t pyPreHookAttribution(HookContext *curContextPtr) {
         uint64_t preLogicalClockCycle = calcCurrentLogicalClock(curContextPtr->cachedWallClockSnapshot,
-                                                                curContextPtr->cachedLogicalClock, curContextPtr->cachedThreadNum);
+                                                                curContextPtr->cachedLogicalClock,
+                                                                curContextPtr->cachedThreadNum);
         return preLogicalClockCycle;
     }
 
-    inline void pyPostHookAttribution(uint64_t preHookTimestamp,HookContext* curContextPtr,RecTuple& curRecTuple){
+    inline void pyPostHookAttribution(uint64_t preHookTimestamp, HookContext *curContextPtr, RecTuple &curRecTuple) {
         uint64_t postLogicalClockCycle = calcCurrentLogicalClock(curContextPtr->cachedWallClockSnapshot,
-                                                                 curContextPtr->cachedLogicalClock, curContextPtr->cachedThreadNum);
+                                                                 curContextPtr->cachedLogicalClock,
+                                                                 curContextPtr->cachedThreadNum);
         uint64_t clockCyclesDuration = (int64_t) (postLogicalClockCycle - preHookTimestamp);
-        curRecTuple.totalClockCycles+=clockCyclesDuration;
+        curRecTuple.totalClockCycles += clockCyclesDuration;
     }
 }
 

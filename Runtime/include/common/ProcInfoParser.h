@@ -40,14 +40,29 @@ namespace mlinsight {
      */
     class PMEntry {
     public:
+        //A counter used to mark the number of loaded file ID. This ID is always incremental to support library unloading. -1 means no file has been loaded.
+
+    public:
+        uint8_t *addrStart = nullptr;
+        uint8_t *addrEnd = nullptr;
+        std::string pathNameString;
+        FileID globalFileId;
+    public:
         enum PERM {
             READ = 3,
             WRITE = 2,
             EXEC = 1,
             PRIVATE = 0
         };
+
+        // PMEntry(uint8_t* addrStart,uint8_t* addrEnd,char* permString, std::string& pathNameString):addrStart(addrStart),
+        // addrEnd(addrEnd),pathNameString(pathNameString){
+        //     //We define pathNameString to rvalue so that we can save some overhead
+
+        // }
+
+
         // end address
-        ssize_t globalFileId = -1;
         unsigned char permBits = 0; // Is readable
 
         inline bool isR() const {
@@ -102,12 +117,6 @@ namespace mlinsight {
                 setP();
             }
         }
-
-        ssize_t loadingId = -1; //Marks the version of this entry, used to detect entry deletion
-        uint8_t *addrStart = nullptr;
-        // start address of the segment
-        uint8_t *addrEnd = nullptr;
-        ssize_t creationLoadingId = -1;//Marks the creation loadingId of this entry. This combined with previous field can be used to detect new file addition.
     };
 
 
@@ -116,22 +125,19 @@ namespace mlinsight {
      */
     class FileEntry {
     public:
-        ssize_t pathNameStartIndex = -1;
-        ssize_t pathNameEndIndex = -1;
-        ssize_t pmEntryNumbers;
-        bool valid = false;
-        ssize_t loadingId = -1; //Marks the version of this entry, used to detect entry deletion
-        ssize_t creationLoadingId = -1;//Marks the creation loadingId of this entry. This combined with previous field can be used to detect new file addition.
-        uint8_t *baseStartAddr = nullptr;
-        uint8_t *baseEndAddr = nullptr;
-        ssize_t recArrFileId=-1;//This corresponds to the loading 
-
-        ssize_t getPathNameLength() {
-            return pathNameEndIndex - pathNameStartIndex - 1;
-        }
+        std::string filePath;
+        //This counter marks the time when this fileEntry is newly loaded or reloaded.
+        ssize_t loadingCounter = -1;
+        bool valid = false; //File should be hooked by Scaler or not. It is determined at the first loading time based on fileName.
+        bool fileExists = false;
+        bool fileUnloaded = false;
+        //Used to map fileEntry to pmEntry based on address range.
+        //Each element in this vector represents a CONTINOUS driverMemRecord region defined by two pmEntry ids [pair.first,pair,second].
+        std::vector<std::pair<ssize_t, ssize_t>> pmEntryRange;
     };
 
     typedef void (*FileNameCallBack)(const char *pathName, const ssize_t length, const ssize_t fileId);
+
 
     /**
      * This class was a helper tool to parse /proc/self/maps
@@ -139,23 +145,23 @@ namespace mlinsight {
      */
     class PmParser {
     public:
-        explicit PmParser(std::string saveFolderName, std::string customProcFileName = "");
+        PmParser();
+
+        explicit PmParser(FILE *saveFolderName, std::string customProcFileName = "");
 
 
         /**
          * A convenient way to print /proc/{pid}/maps
          */
-        virtual void printPM();
+        void printPM();
 
-        virtual ssize_t findFileIdByAddr(void *addr);
+        ssize_t findFileIdByAddr(void *addr);
 
         /**
-         * Return addr is located in which file.
-         * "lo" returns the index such that pmEntryArray[lo].addrStart >= addr
+         * Return addr is located in which file
          * @param fileId in fileIDMap
          */
-        virtual void findPmEntryIdByAddr(void *addr, ssize_t &lo, bool &found);
-
+        std::vector<PMEntry>::iterator findPmEntryIdByAddr(void *addr);
 
 
         ~PmParser();
@@ -164,61 +170,73 @@ namespace mlinsight {
          * Parse /proc/{pid}/maps into procMap
          * Multiple invocation will keep the internal pmmap
          */
-        virtual bool parsePMMap();
+        bool parsePMMap();
 
+        inline ssize_t getLoadingCounter(){
+            return loadingCounter;
+        }
 
-        virtual inline void
-        getNewFileEntryIds(Array<ssize_t> &retArray, bool mustBeValid= false) {
-            for (ssize_t i = 0; i < fileEntryArray.getSize(); ++i) {
-                if (loadingId == fileEntryArray[i].creationLoadingId && (fileEntryArray[i].valid || !mustBeValid)) {
-                    retArray.pushBack(i);
+        inline void
+        getNewFileEntryIds(std::vector<ssize_t> &rltArray, ssize_t lastLoadingCounter, bool mustBeValid = false) {
+            for (FileID fileId = 0; fileId < fileEntryArray.size(); ++fileId) {
+                FileEntry &curFileEntry = fileEntryArray[fileId];
+                bool isValid = curFileEntry.valid || !mustBeValid;
+                if (isValid && curFileEntry.loadingCounter > lastLoadingCounter) {
+                    //INFO_LOGS("I think %zd has been loaded",callerFileId);
+                    rltArray.emplace_back(fileId);
                 }
             }
         }
 
-        virtual inline PMEntry &getPmEntry(ssize_t i) {
-            PMEntry *ret = &pmEntryArray.get(i);
-            return *ret;
+        inline PMEntry &getPmEntry(ssize_t i) {
+            PMEntry *rlt = &pmEntryArray[i];
+            return *rlt;
         }
 
-        virtual inline FileEntry &getFileEntry(ssize_t i) {
-            FileEntry *ret = &fileEntryArray.get(i);
-            return *ret;
+        inline FileEntry &getFileEntry(ssize_t i) {
+            return fileEntryArray[i];
         }
 
-        const char *getStr(ssize_t strStart);
+        inline const FileID getMLInsightFileId() {
+            return mlinsightFileID;
+        }
+
+        inline const FileID getC10CUDAFileID() {
+            return this->libc10_cuda_fileId;
+        }
 
         ssize_t getFileEntryArraySize();
 
-        inline const ssize_t getMLInsightFileId(){
-            return mlinsightFileId;
-        }
+        ssize_t getPythonInterpreterFileId();
+
+        void getAddressRangeByFileId(const FileID &fileId, void *&startAddr, void *&endAddr);
 
     protected:
-        Array<char> stringTable;
+        std::vector<char> stringTable;
         std::string customProcFileName;
-        ssize_t loadingId = -1;
-        Array<PMEntry> pmEntryArray;
-        Array<FileEntry> fileEntryArray;
-        std::string folderName;
-        ssize_t mlinsightFileId=-1;
+        std::vector<PMEntry> pmEntryArray;
+        std::map<std::string, FileID> fileNameFileIdMap;
+        //The index is FileID, the value indicates whether this callerFileId exists in /proc/{pid}/maps.
+        //The std::string is fileName and is used to find deleted entries in fileEntryMap
+        //The last bool is used to mark whether this callerFileId has been deleted from fileEntryMap
+        std::vector<FileEntry> fileEntryArray;
+        FILE *fileNameStrTbl{};
+        //This counter will increase by 1 when a new file is loaded.
+        //The purpose of this counter is to help comparing whether a library is newly installed or not. And also helps to distinguish repeatly load and unload APIs of at the same address.
+        ssize_t loadingCounter = -1;
+        FileID mlinsightFileID = -1; //The file ID of Scaler itself.
+        FileID libc10_cuda_fileId = -1; //The file ID of libc10_cuda.so
+        ssize_t pythonIntrepreterFileId = -1; //The file ID of python interpreter
+        pthread_mutex_t pmParserLock;
 
         FILE *openProcFile();
 
-        bool matchWithPreviousFileId(ssize_t curLoadingId, char *pathName,
-                                     ssize_t pathNameLen, PMEntry *newPmEntry);
+        bool isFileNameValid(int scanfreturnValue, const std::string &pathName, ssize_t curFileId);
 
-        void createFileEntry(PMEntry *newPmEntry, ssize_t loadingId, char *pathName, ssize_t pathNameLen,
-                             ssize_t scanfReadNum);
+        void handleUnloadedFileEntries();
 
-        void rmDeletedPmEntries(ssize_t loadingId);
-
-        void updateFileBaseAddr();
     };
 
-    extern FileID libc10_cuda_fileId;
-    extern void * libc10_cuda_text_begin; // The begin address of c10_cuda_text
-    extern void * libc10_cuda_text_end; 
 };
 
 

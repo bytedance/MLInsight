@@ -17,20 +17,21 @@
 #include "common/HashAndCompareFunctions.h"
 
 namespace mlinsight {
-    template<class KEY_TYPE, class VALUE_TYPE,template<typename> class HEAP_TYPE>
+    template<class KEY_TYPE, class VALUE_TYPE, template<typename> class HEAP_TYPE>
     class HashMap;
 
     /**
      * A key and value pair.
      * @tparam KEY_TYPE Type of key.
      * @tparam VALUE_TYPE Type of value.
-     * @tparam HEAP_TYPE Type of memory allocator for HashBucket.
+     * @tparam HEAP_TYPE Type of driverMemRecord allocator for HashBucket.
      */
-    template<typename KEY_TYPE, typename VALUE_TYPE,template<typename> class HEAP_TYPE>
+    template<typename KEY_TYPE, typename VALUE_TYPE, template<typename> class HEAP_TYPE>
     class HashEntry {
     protected:
         //Allow Hashmap to access hash entry.
-        friend class HashMap<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
+        friend class HashMap<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
+
         //Key stored in this hash entry.
         KEY_TYPE key;
         //Value stored in this hash entry. This value is constructed lazily, check LazyConstructValue.
@@ -38,10 +39,10 @@ namespace mlinsight {
 
     public:
 
-         /**
-          * Construct HashEntry.
-          * @param key The key of this hash entry.
-          */
+        /**
+         * Construct HashEntry.
+         * @param key The key of this hash entry.
+         */
         HashEntry(KEY_TYPE &key) : key(key) {
         }
 
@@ -60,7 +61,7 @@ namespace mlinsight {
          * Get the value stored in this hash entry. The value must have been constructed before invoking this function,
          * otherwise this function will abort the program because it is the developer's fault.
          */
-        inline VALUE_TYPE& getValue() {
+        inline VALUE_TYPE &getValue() {
             return value.getConstructedValue();
         }
 
@@ -80,17 +81,18 @@ namespace mlinsight {
      * Iterator for hashmap.
      * @tparam KEY_TYPE Type of key.
      * @tparam VALUE_TYPE Type of value.
-     * @tparam HEAP_TYPE Type of memory allocator for HashBucket.
+     * @tparam HEAP_TYPE Type of driverMemRecord allocator for HashBucket.
      */
-    template<class KEY_TYPE, class VALUE_TYPE,template<typename> class HEAP_TYPE>
-    class HashMapIterator{
+    template<class KEY_TYPE, class VALUE_TYPE, template<typename> class HEAP_TYPE>
+    class HashMapIterator {
     protected:
-        using HashMap_t = HashMap<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
-        using HashBucket_t = LinkedList<HashEntry<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>,HEAP_TYPE>;
-        using HashEntry_t = HashEntry<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
-        using BucketEntry_t = ListEntry<HashEntry_t,HEAP_TYPE>;
+        using HashMap_t = HashMap<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
+        using HashBucket_t = LinkedList<HashEntry<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>, HEAP_TYPE>;
+        using HashEntry_t = HashEntry<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
+        using BucketEntry_t = ListEntry<HashEntry_t, HEAP_TYPE>;
+
         //Allow hashmap to access iterator.
-        friend class HashMap<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
+        friend class HashMap<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
 
         // The owner of this iterator.
         HashMap_t *hashMap;
@@ -99,7 +101,7 @@ namespace mlinsight {
         // The current bucket entry this iterator points to.
         BucketEntry_t *curBucketEntry;
     public:
-        explicit HashMapIterator(HashMap_t *hashMap):curBucketId(0),hashMap(hashMap),curBucketEntry(nullptr) {
+        explicit HashMapIterator(HashMap_t *hashMap) : curBucketId(0), hashMap(hashMap), curBucketEntry(nullptr) {
 
         }
 
@@ -107,7 +109,7 @@ namespace mlinsight {
          * Go to next element, use iterator++.
          * If there are no next element, then this function will abort the program because it is the developer's fault.
          */
-        void operator++()  {
+        void operator++() {
             bool hasNext = getNextEntry(curBucketId, curBucketEntry);
             assert(hasNext);
         }
@@ -116,12 +118,12 @@ namespace mlinsight {
          * Go to next element, use ++iteratorx.
          * If there are no next element, then this function will abort the program because it is the developer's fault.
          */
-        void operator++(int)  {
+        void operator++(int) {
             operator++();
         }
 
 
-        bool operator==(const HashMapIterator &rho) const  {
+        bool operator==(const HashMapIterator &rho) const {
             //Equal only when the bucket is the same.
             return curBucketEntry == rho.curBucketEntry && curBucketId == rho.curBucketId &&
                    hashMap == rho.hashMap;
@@ -136,7 +138,7 @@ namespace mlinsight {
          * If the value is not constructed, this function will abort the program because it is the developer's fault.
          * @return Constructed value.
          */
-        VALUE_TYPE &operator*()  {
+        VALUE_TYPE &operator*() {
             assert(curBucketEntry != hashMap->buckets[curBucketId].getTail());
             return curBucketEntry->getValue().getValue();
         }
@@ -157,10 +159,10 @@ namespace mlinsight {
          * @param retEntry The returned bucket entry.
          * @return This this invocation successfully move to the next entry.
          */
-        inline bool getNextEntry(ssize_t& retBucketId, BucketEntry_t *&retEntry) {
+        inline bool getNextEntry(ssize_t &retBucketId, BucketEntry_t *&retEntry) {
             bool hasNextEntry = false;
             retEntry = curBucketEntry;
-            HashBucket_t * bucket=&(hashMap->buckets[retBucketId]);
+            HashBucket_t *bucket = &(hashMap->buckets[retBucketId]);
             while (true) {
                 if (retEntry->getNext() != bucket->getTail()) {
                     //Not tail, go to next element.
@@ -183,14 +185,15 @@ namespace mlinsight {
 
     };
 
-    template<typename KEY_TYPE, typename VALUE_TYPE,template<typename> class HEAP_TYPE=PassThroughMemoryHeap>
+    template<typename KEY_TYPE, typename VALUE_TYPE, template<typename> class HEAP_TYPE=PassThroughMemoryHeap>
     class HashMap {
     protected:
-        using HashEntry_t = HashEntry<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
-        using BucketEntry_t = ListEntry<HashEntry_t,HEAP_TYPE>;
-        using HashBucket_t = LinkedList<HashEntry_t,HEAP_TYPE>;
-        using HashMapIterator_t = HashMapIterator<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
-        friend class HashMapIterator<KEY_TYPE, VALUE_TYPE,HEAP_TYPE>;
+        using HashEntry_t = HashEntry<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
+        using BucketEntry_t = ListEntry<HashEntry_t, HEAP_TYPE>;
+        using HashBucket_t = LinkedList<HashEntry_t, HEAP_TYPE>;
+        using HashMapIterator_t = HashMapIterator<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
+
+        friend class HashMapIterator<KEY_TYPE, VALUE_TYPE, HEAP_TYPE>;
 
         typedef bool (*Comparator_t)(const KEY_TYPE &src, const KEY_TYPE &dst);
 
@@ -200,38 +203,40 @@ namespace mlinsight {
         ssize_t bucketNum = -1;     // How many buckets in total
         HashFunc_t hfunc = nullptr;
         Comparator_t kcmp = nullptr;
-        ssize_t elementSize=0; //How many elements are there in this hashmap
+        ssize_t elementSize = 0; //How many elements are there in this hashmap
         HashMapIterator_t beginIter;
         HashMapIterator_t endIter;
     public:
 
-        HashMap(const ssize_t bucketNum = 16, HashFunc_t hfunc = hash<KEY_TYPE>,Comparator_t kcmp = compare<KEY_TYPE>):
-                            hfunc(hfunc),kcmp(kcmp),buckets(nullptr),bucketNum(bucketNum),beginIter(this),endIter(this){
+        HashMap(const ssize_t bucketNum = 16, HashFunc_t hfunc = hash<KEY_TYPE>, Comparator_t kcmp = compare<KEY_TYPE>)
+                :
+                hfunc(hfunc), kcmp(kcmp), buckets(nullptr), bucketNum(bucketNum), beginIter(this), endIter(this) {
             assert(bucketNum >= 1);
             assert(hfunc != nullptr && kcmp != nullptr);
             // Initialize all of these _entries.
-            this->buckets = reinterpret_cast<HashBucket_t*>(malloc(sizeof(HashBucket_t)*bucketNum));
-            if(!this->buckets){
-                fatalError("Cannot allocateArray memory for hash buckets.");
+            this->buckets = reinterpret_cast<HashBucket_t *>(malloc(sizeof(HashBucket_t) * bucketNum));
+            if (!this->buckets) {
+                fatalError("Cannot allocateArray driverMemRecord for hash buckets.");
             }
             for (int i = 0; i < bucketNum; ++i) {
-                //Do not use "new HashBucket_t[]" to allocate memory because we may need to use custom constructor parameter
-                new (this->buckets+i) HashBucket_t();
+                //Do not use "new HashBucket_t[]" to allocate driverMemRecord because we may need to use custom constructor parameter
+                new(this->buckets + i) HashBucket_t();
             }
         }
 
         /**
          * Copy and swap idiom: Copy constructor.
          */
-        HashMap(const HashMap& rho):bucketNum(rho.bucketNum),hfunc(rho.hfunc),kcmp(rho.kcmp),elementSize(rho.elementSize),
-                                                                                            beginIter(this),endIter(this){
-            this->buckets = reinterpret_cast<HashBucket_t*>(malloc(sizeof(HashBucket_t)*bucketNum));
-            if(!this->buckets){
-                fatalError("Failed to allocateArray memory for HashBuckets.")
+        HashMap(const HashMap &rho) : bucketNum(rho.bucketNum), hfunc(rho.hfunc), kcmp(rho.kcmp),
+                                      elementSize(rho.elementSize),
+                                      beginIter(this), endIter(this) {
+            this->buckets = reinterpret_cast<HashBucket_t *>(malloc(sizeof(HashBucket_t) * bucketNum));
+            if (!this->buckets) {
+                fatalError("Failed to allocateArray driverMemRecord for HashBuckets.")
             }
             for (int i = 0; i < bucketNum; ++i) {
                 //Delegate copy constructor to HashBucket_t's copy constructor
-                new (this->buckets+i) HashBucket_t(rho.buckets[i]);
+                new(this->buckets + i) HashBucket_t(rho.buckets[i]);
             }
 
         }
@@ -239,22 +244,23 @@ namespace mlinsight {
         /**
          * Copy and swap idiom: Move constructor.
          */
-        HashMap(HashMap&& rho):bucketNum(rho.bucketNum),hfunc(rho.hfunc),kcmp(rho.kcmp),elementSize(rho.elementSize),
-                                        beginIter(this),endIter(this){
+        HashMap(HashMap &&rho) : bucketNum(rho.bucketNum), hfunc(rho.hfunc), kcmp(rho.kcmp),
+                                 elementSize(rho.elementSize),
+                                 beginIter(this), endIter(this) {
             //Here, we do not allocateArray buckets, but will directly use buckets from rho.
-            HashBucket_t* oldMemory=this->buckets;
-            this->buckets=rho.buckets;
-            rho.buckets=nullptr; //Prevent rho from freeing the memory.
-            free(oldMemory); //Free previously allocated memory
+            HashBucket_t *oldMemory = this->buckets;
+            this->buckets = rho.buckets;
+            rho.buckets = nullptr; //Prevent rho from freeing the driverMemRecord.
+            free(oldMemory); //Free previously allocated driverMemRecord
         }
 
         /**
          * Copy and swap idiom: Copy assignment.
          */
-        HashMap& operator=(const HashMap& rho){
-            if(this!=&rho){
+        HashMap &operator=(const HashMap &rho) {
+            if (this != &rho) {
                 HashMap tempObj(rho);
-                swap(*this,tempObj);
+                swap(*this, tempObj);
             }
             return *this;
         }
@@ -262,29 +268,29 @@ namespace mlinsight {
         /**
          * Copy and swap idiom: Move assignment.
          */
-        HashMap& operator=(HashMap&& rho){
-            swap(*this,rho);
+        HashMap &operator=(HashMap &&rho) {
+            swap(*this, rho);
             return *this;
         }
 
         /**
          * Copy and swap idiom: swap function.
          */
-        friend void swap(HashMap& lho,HashMap& rho) noexcept{
+        friend void swap(HashMap &lho, HashMap &rho) noexcept {
             using std::swap;
-            //Swap will not allocateArray extra memory, which is ensured by the compiler.
-            //The memory allocated in this class will be freed with tempObj.
-            swap(lho.buckets,rho.buckets);
-            swap(lho.bucketNum,rho.bucketNum);
-            swap(lho.hfunc,rho.hfunc);
-            swap(lho.kcmp,rho.kcmp);
-            swap(lho.elementSize,rho.elementSize);
-            swap(lho.beginIter,rho.beginIter);
-            swap(lho.endIter,rho.endIter);
+            //Swap will not allocateArray extra driverMemRecord, which is ensured by the compiler.
+            //The driverMemRecord allocated in this class will be freed with tempObj.
+            swap(lho.buckets, rho.buckets);
+            swap(lho.bucketNum, rho.bucketNum);
+            swap(lho.hfunc, rho.hfunc);
+            swap(lho.kcmp, rho.kcmp);
+            swap(lho.elementSize, rho.elementSize);
+            swap(lho.beginIter, rho.beginIter);
+            swap(lho.endIter, rho.endIter);
         }
 
         virtual ~HashMap() {
-            if(buckets){
+            if (buckets) {
                 //Free buckets
                 for (int i = 0; i < bucketNum; ++i) {
                     //Free HashBucket value
@@ -320,10 +326,10 @@ namespace mlinsight {
          * Insert an element into hashmap with key. If key already exists, then the value will be replaced.
          * If the user do not wish to insert non-exist element automatically, please use "find" API.
          */
-        template<typename KEY_TYPE_=KEY_TYPE,typename ...Args>
-        inline VALUE_TYPE& insert(KEY_TYPE_ &&key,Args&&... args) {
+        template<typename KEY_TYPE_=KEY_TYPE, typename ...Args>
+        inline VALUE_TYPE &insert(KEY_TYPE_ &&key, Args &&... args) {
             bool retFound;
-            return findAndInsert(key,true,retFound,std::forward<Args>(args)...);
+            return findAndInsert(key, true, retFound, std::forward<Args>(args)...);
         }
 
         /**
@@ -338,20 +344,20 @@ namespace mlinsight {
          * @param args Argument pack for perfect forwarding.
          * @return Reference to the value of hashmap element.
          */
-        template<typename KEY_TYPE_=KEY_TYPE,typename ...Args>
-        inline VALUE_TYPE& findAndInsert(KEY_TYPE_ &&key,bool replace,bool& retFound,Args&&... args) {
-            LazyConstructValue<VALUE_TYPE>& rawValue= insertLazyConstruct(key, retFound);
-            if(replace){
+        template<typename KEY_TYPE_=KEY_TYPE, typename ...Args>
+        inline VALUE_TYPE &findAndInsert(KEY_TYPE_ &&key, bool replace, bool &retFound, Args &&... args) {
+            LazyConstructValue<VALUE_TYPE> &rawValue = insertLazyConstruct(key, retFound);
+            if (replace) {
                 //Should replace
                 //If value exists, destruct and replace. If value not exists, construct.
-                if(retFound){
+                if (retFound) {
                     rawValue.destructValue();
                 }
                 rawValue.constructValue(std::forward<Args>(args)...);
-            }else if(!retFound){
+            } else if (!retFound) {
                 //Should not replace and key is not found (new element allocated). Construct.
                 rawValue.constructValue(std::forward<Args>(args)...);
-            }else{
+            } else {
                 //Should not replace but key is found, return directly.
             }
 
@@ -377,17 +383,18 @@ namespace mlinsight {
             if (isFound) {
                 //Call the destructor of VALUE
                 curBucket->erase(entry);
-                elementSize-=1;
+                elementSize -= 1;
             }
         }
+
         /**
          * Remove all elements in hashmap
          */
-        void clear(){
-            for(int i=0;i<bucketNum;++i){
+        void clear() {
+            for (int i = 0; i < bucketNum; ++i) {
                 buckets[i].clear();
             }
-            elementSize=0;
+            elementSize = 0;
         }
 
         /**
@@ -409,7 +416,7 @@ namespace mlinsight {
         }
 
 
-        const ssize_t& getSize() const {
+        const ssize_t &getSize() const {
             return elementSize;
         }
 
@@ -460,23 +467,23 @@ namespace mlinsight {
 
         /**
          * Insert an element into hashmap with key. If key already exists, then the value will be replaced.
-         * Compared to "Insert" and "findAndInsert", this function will only allocate memory but willnot construct object.
+         * Compared to "Insert" and "findAndInsert", this function will only allocate driverMemRecord but willnot construct object.
          * The user needs to construct object using placement-new at appropriate times.
          * The user do not need to free this object because it will be freed by HashMap.
          */
         template<typename KEY_TYPE_=KEY_TYPE>
-        LazyConstructValue<VALUE_TYPE>& insertLazyConstruct(KEY_TYPE_ &&key, bool& retFound) {
+        LazyConstructValue<VALUE_TYPE> &insertLazyConstruct(KEY_TYPE_ &&key, bool &retFound) {
             ssize_t hindex = hashIndex(key);
             HashBucket_t *bucket = getHashBucket(hindex);
             HashEntry_t *hashEntry;
-            retFound=getHashEntry(key, bucket, hashEntry);
+            retFound = getHashEntry(key, bucket, hashEntry);
             if (!retFound) {
                 //Did not find this hashEntry (collision), so we have to insert current key into hash bucket
                 //Construct key but do not construct value. Value construction is delayed to user.
-                hashEntry=&(bucket->insertAfter(bucket->getHead(),key));
+                hashEntry = &(bucket->insertAfter(bucket->getHead(), key));
             }
 
-            elementSize+=1;
+            elementSize += 1;
             //Return value part to user
             return hashEntry->value;
         }
