@@ -158,6 +158,7 @@ namespace mlinsight {
 
 
         void printDriverInfo(std::ostream &output) const {
+            output <<"Callstack details saving folder: "<< logProcessRootPath << std::endl;
             //assert(driverMetric.totalMem != 0);
             // Printing the total information
             output << "General GPU information: total " << format_size(driverMetric.totalMem) << ". Current usage - "
@@ -295,7 +296,7 @@ namespace mlinsight {
             }
         }
 
-        void onOutOfMemory(ssize_t size) {
+        void onOutOfMemoryFramework(ssize_t size) {
             std::string fileName = logProcessRootPath + "/memoryprofile_oom.txt";
             std::ofstream output(fileName, std::ios::app);
             //Save memory analyzer results

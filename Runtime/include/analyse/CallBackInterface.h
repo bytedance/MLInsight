@@ -4,6 +4,38 @@
 #include <cstdio>
 
 namespace mlinsight{
+
+enum class MLExecutionState : char {
+    UNSPECIFIED_ML_EXECUTION_STATE = 0,
+    FORWARD_STATE = 1,
+    BACKWARD_STATE = 2
+};
+
+struct MLExecutionStackFrame {
+    ssize_t layerId = -1;
+    MLExecutionState mlExecutionState = MLExecutionState::UNSPECIFIED_ML_EXECUTION_STATE;
+    void* modulePointer=nullptr; //Used to reduce unordered map operation
+
+    inline MLExecutionStackFrame() = default;
+
+    inline MLExecutionStackFrame(ssize_t pyTorchModuleId, MLExecutionState pyTorchModuleExecutionState, void* modulePointer) : layerId(
+            pyTorchModuleId), mlExecutionState(pyTorchModuleExecutionState), modulePointer(modulePointer) {
+
+    }
+};
+
+static const char *toString(const MLExecutionState &execState) {
+    switch (execState) {
+        case MLExecutionState::UNSPECIFIED_ML_EXECUTION_STATE:
+            return "Unspecified";
+        case MLExecutionState::FORWARD_STATE:
+            return "Forward";
+        case MLExecutionState::BACKWARD_STATE:
+            return "Backward";
+    }
+    return "Error";
+}
+
 /**
  * Callbacks for classes that only handles allocation from one allocator.
  * To prevent performance overhead, we do not allow the use of virtual function. That is why user should never upcast to this base class.
@@ -91,8 +123,22 @@ public:
     */
     void onPostFreeFramework(void *ptr,FRAMEWORK_TENSOR_TYPE* justFreedTensor) {}
 
+    /**
+     * [Interface]
+     * Called before throwing Pytorch out of memory error
+     * @param size 
+     */
+    void onOutOfMemoryFramework(ssize_t size) {}
 
-    void onOutOfMemory(ssize_t size) {}
+    void onPreLayerForward(ssize_t layerId, MLExecutionStackFrame &curExecState) {}
+
+    void onPostLayerForward(ssize_t layerId, MLExecutionStackFrame &curExecState) {}
+
+    void onPreLayerBackward(ssize_t layerId, MLExecutionStackFrame &curExecState) {}
+
+    void onPostLayerBackward(ssize_t layerId, MLExecutionStackFrame &curExecState) {}
+
+
 protected:
     CompleteCallback(){}
 };

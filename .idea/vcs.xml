@@ -3,5 +3,27 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/android-core" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/android-libbase" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/android-libprocinfo" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/android-logging" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/android-unwinding" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/benchmark" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/bionic" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/clang_format/script" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/jsoncpp" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/libcxx" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/libcxxabi" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/libfuzzer" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/libunwind" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/linenoise" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/lzma" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/protobuf" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/protobuf/third_party/benchmark" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/protobuf/third_party/googletest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/sqlite_src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/zlib" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Runtime/lib/perfetto/buildtools/zstd" vcs="Git" />
   </component>
 </project>

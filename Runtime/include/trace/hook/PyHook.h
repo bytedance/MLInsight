@@ -53,35 +53,7 @@ namespace mlinsight {
     RecTuple &allocateTimeRecordingTuple(PythonFrameExtra_t *prevCodeExtra, PythonFrameExtra_t *curCodeExtra);
 
 
-    enum class PyTorchModuleState : char {
-        UNSPECIFIED_PYTORCH_MODULE_STATE = 0,
-        FORWARD_STATE = 1,
-        BACKWARD_STATE = 2
-    };
 
-    struct ExecutionState {
-        FileID pyTorchModuleId = -1;
-        PyTorchModuleState pyTorchModuleExecutionState = PyTorchModuleState::UNSPECIFIED_PYTORCH_MODULE_STATE;
-
-        inline ExecutionState() = default;
-
-        inline ExecutionState(FileID pyTorchModuleId, PyTorchModuleState pyTorchModuleExecutionState) : pyTorchModuleId(
-                pyTorchModuleId), pyTorchModuleExecutionState(pyTorchModuleExecutionState) {
-
-        }
-    };
-
-    static const char *toString(const PyTorchModuleState &execState) {
-        switch (execState) {
-            case PyTorchModuleState::UNSPECIFIED_PYTORCH_MODULE_STATE:
-                return "Unspecified";
-            case PyTorchModuleState::FORWARD_STATE:
-                return "Forward";
-            case PyTorchModuleState::BACKWARD_STATE:
-                return "Backward";
-        }
-        return "Error";
-    }
 
     typedef ssize_t CORRELATION_ID;
     const ssize_t UNSPECIFIED_CORRELATION_ID=-1;
@@ -94,7 +66,7 @@ namespace mlinsight {
     class PythonExecutionState:public SimpleCallback<FRAMEWORK_TENSOR_TYPE> {
     public:
         ssize_t pyModuleId = -1; //The currently executed fileId of the python module. If this value is -1, it means that there is no python function executing. Beware that this value may be -1.
-        std::vector<ExecutionState> pyTorchModuleStack;
+        std::vector<MLExecutionStackFrame> pyTorchModuleStack;
 
         /**
          * This variable is set to false before framework memory allocation. And is true after driver memory allocation

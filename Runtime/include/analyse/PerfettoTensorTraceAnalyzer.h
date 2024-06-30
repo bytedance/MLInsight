@@ -29,6 +29,7 @@ namespace mlinsight::Perfetto {
 
 namespace mlinsight {
 
+    extern ssize_t stepCounter;
     template<typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
     class PerfettoTensorTraceAnalyser: public CompleteCallback<DRIVER_CTENSOR_TYPE,FRAMEWORK_CTENSOR_TYPE> {
     public:
@@ -78,9 +79,18 @@ namespace mlinsight {
         */
         void onPostFreeFramework(void *ptr,FRAMEWORK_CTENSOR_TYPE* justFreedTensor);
 
-        void onStepFinished();
+        void onStepFinished(ssize_t stepCounter);
 
-        void onOutOfMemory(ssize_t size);
+        void onOutOfMemoryFramework(ssize_t size);
+
+        void onPreLayerForward(ssize_t layerId, MLExecutionStackFrame &curExecState);
+
+        void onPostLayerForward(ssize_t layerId, MLExecutionStackFrame &curExecState);
+
+        void onPreLayerBackward(ssize_t layerId, MLExecutionStackFrame &executionState);
+
+        void onPostLayerBackward(ssize_t layerId, MLExecutionStackFrame &curExecState);
+
     };
     
     extern bool shouldProfileThisRank; //A boolean indicating whether MLInsight should output any data

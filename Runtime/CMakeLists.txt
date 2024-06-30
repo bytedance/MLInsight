@@ -92,6 +92,7 @@ set(HOOK_SRC
         src/analyse/GlobalVariable.cpp
         src/analyse/MemLeakAnalyzer.cpp
         src/analyse/TensorObj.cpp
+        src/analyse/MemIncrementalAnalyzer.cpp
         src/trace/PyCodeExtra.cpp
         src/common/CallStack.cpp
         ${OPTIONAL_SRC}

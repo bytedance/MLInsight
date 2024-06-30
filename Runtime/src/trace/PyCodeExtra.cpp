@@ -33,7 +33,7 @@ namespace mlinsight
     std::string PyCallStack::toString(){
 
         if(this->strCache.length()==0){
-            if(this->array.size()==0){
+            if(this->array.size()!=0){
                 std::stringstream ss;
                 for (int i = 0; i < this->array.size(); i++)
                 {  

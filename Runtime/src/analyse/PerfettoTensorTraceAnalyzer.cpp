@@ -5,7 +5,6 @@
 namespace mlinsight
 {
 
-    ssize_t stepCounter=0;//Training step counter
     ssize_t waitCounter=0;//Used to support "Wait" and "Active"
 
     // Explicitly initialize
@@ -214,7 +213,7 @@ namespace mlinsight
     }
 
     template <typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
-    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onStepFinished(){
+    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onStepFinished(ssize_t stepCounter){
         MLINSIGHT_TRACE_EVENT_BEGIN("flamegraph","Pytorch Snapshot",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK));
         std::stringstream ss;
         // this->memLeakAnalyzer.printSummary(ss,0);
@@ -227,7 +226,7 @@ namespace mlinsight
        
         
         
-        MLINSIGHT_TRACE_EVENT_END("flamegraph",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK),"MLInsight.memLeakTorchDetail",memLeakTorchSummary);
+        MLINSIGHT_TRACE_EVENT_END("flamegraph",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK),"MLInsight.stepCorrelation",stepCounter,"MLInsight.memLeakTorchDetail",memLeakTorchSummary);
 
         if(showNonPytorchObjects){
             MLINSIGHT_TRACE_EVENT_BEGIN("flamegraph","Non-Pytorch Snapshot",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK));
@@ -235,6 +234,7 @@ namespace mlinsight
             this->memLeakAnalyzer.printDriver(ss,0);
             std::string memLeakNonTorchSummary=ss.str();
             MLINSIGHT_TRACE_EVENT_END("flamegraph",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK),
+                                                                            "MLInsight.stepCorrelation",stepCounter,
                                                                             "MLInsight.memLeakNonTorchSummary",memLeakNonTorchSummary
                                                                             );
         }
@@ -268,18 +268,17 @@ namespace mlinsight
 
         }
 
-        if(stepCounter>0){
+        if(stepCounter>-1){
             MLINSIGHT_TRACE_EVENT_END("forward",perfetto::Track(STEP_TRACK));
         }
 
         char stepStr[255];
-        sprintf(stepStr,"Step %zd",stepCounter);
-        MLINSIGHT_TRACE_EVENT_BEGIN("forward",perfetto::DynamicString(stepStr),perfetto::Track(STEP_TRACK));
-        ++stepCounter;
+        sprintf(stepStr,"Step %zd",stepCounter+1);
+        MLINSIGHT_TRACE_EVENT_BEGIN("forward",perfetto::DynamicString(stepStr),perfetto::Track(STEP_TRACK))
     }
 
     template <typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
-    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onOutOfMemory(ssize_t size){
+    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onOutOfMemoryFramework(ssize_t size){
          MLINSIGHT_TRACE_EVENT_BEGIN("flamegraph","Snapshot at OOM",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK));
         std::stringstream ss;
         this->memLeakAnalyzer.printFramework(ss,0);
@@ -289,8 +288,34 @@ namespace mlinsight
         this->memLeakAnalyzer.printDriver(ss,0);
         std::string memLeakNonTorchSummary=ss.str();
         
-        MLINSIGHT_TRACE_EVENT_END("flamegraph",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK),"MLInsight.memLeakTorchDetail",memLeakTorchSummary
+        MLINSIGHT_TRACE_EVENT_END("flamegraph",perfetto::Track(MEMORY_FLAMEGRAPH_TRACK),"MLInsight.stepCorrelation",stepCounter,"MLInsight.memLeakTorchDetail",memLeakTorchSummary
                                                                             ,"MLInsight.memLeakNonTorchSummary",memLeakNonTorchSummary
                                                                             );
+    }
+
+    template <typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
+    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onPreLayerForward(ssize_t layerId,
+                                                                                                     MLExecutionStackFrame &curExecState) {
+        //todo: Low performance, chache strings
+        MLINSIGHT_TRACE_EVENT_BEGIN("forward",perfetto::DynamicString(hookInstallerInstance->pytorchModuleInfoMap[layerId].moduleName.c_str()), "ModuleID",layerId);
+    }
+
+    template <typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
+    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onPostLayerForward(ssize_t layerId,
+                                                                                                      MLExecutionStackFrame &curExecState) {
+        MLINSIGHT_TRACE_EVENT_END("forward");
+    }
+
+    template <typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
+    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onPreLayerBackward(ssize_t layerId,
+                                                                                                      MLExecutionStackFrame &executionState) {
+        MLINSIGHT_TRACE_EVENT_BEGIN("backward", perfetto::DynamicString(hookInstallerInstance->pytorchModuleInfoMap[layerId].moduleName.c_str()),"ModuleID",layerId);
+
+    }
+
+    template <typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
+    void PerfettoTensorTraceAnalyser<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::onPostLayerBackward(ssize_t layerId,
+                                                                                                       MLExecutionStackFrame &curExecState) {
+        MLINSIGHT_TRACE_EVENT_END("backward");
     }
 }

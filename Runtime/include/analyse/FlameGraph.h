@@ -153,10 +153,10 @@ namespace mlinsight {
 
     struct FlameGraphSnapshot {
         //todo: investigate whether this will cause race condition when accessing globalExecutionState
-        ExecutionState pyTorchModuleStack;
+        MLExecutionStackFrame pyTorchModuleStack;
         FTMemCell *snapshotRoot;
 
-        inline FlameGraphSnapshot(const ExecutionState &pytorchModuleStack, FTMemCell *snapshotRoot) :
+        inline FlameGraphSnapshot(const MLExecutionStackFrame &pytorchModuleStack, FTMemCell *snapshotRoot) :
                 pyTorchModuleStack(pytorchModuleStack),
                 snapshotRoot(snapshotRoot) {
         }
@@ -178,7 +178,7 @@ namespace mlinsight {
             //Insert root node
             FTMemCell *newRootNode = nodePool.alloc();
             new(newRootNode) FTMemCell(curSnapShotVersion);
-            snapShotArray.emplace_back(ExecutionState(-1, PyTorchModuleState::UNSPECIFIED_PYTORCH_MODULE_STATE),
+            snapShotArray.emplace_back(MLExecutionStackFrame(-1, MLExecutionState::UNSPECIFIED_ML_EXECUTION_STATE, nullptr),
                                        newRootNode);
             //Prevent this object from being freed
             aggregationByPyModule = new std::vector<ssize_t>();
@@ -266,7 +266,7 @@ namespace mlinsight {
             }
         }
 
-        SnapshotID snapshot(const ExecutionState &execState) {
+        SnapshotID snapshot(const MLExecutionStackFrame &execState) {
             curSnapShotVersion += 1;
             FTMemCell *previousSnapshotRoot = snapShotArray.back().snapshotRoot;
             //Copy the root node and create a new one
@@ -356,8 +356,8 @@ namespace mlinsight {
             }
 
             summaryOutput << "Pytorch State:"
-                          << hookInstallerInstance->pytorchModuleInfoMap[snapshotInfo.pyTorchModuleStack.pyTorchModuleId].moduleName
-                          << '(' << toString(snapshotInfo.pyTorchModuleStack.pyTorchModuleExecutionState) << ')'
+                          << hookInstallerInstance->pytorchModuleInfoMap[snapshotInfo.pyTorchModuleStack.layerId].moduleName
+                          << '(' << toString(snapshotInfo.pyTorchModuleStack.mlExecutionState) << ')'
                           << std::endl;
 
 

@@ -77,6 +77,7 @@ namespace mlinsight{
 
     template<typename DRIVER_CTENSOR_TYPE, typename FRAMEWORK_CTENSOR_TYPE>
     void MemLeakAnalyzer<DRIVER_CTENSOR_TYPE, FRAMEWORK_CTENSOR_TYPE>::printFrameworkInfo(std::ostream &output) {
+        output <<"Callstack details saving folder: "<< logProcessRootPath<< std::endl;
         output << std::endl;
         // Printing the pytorch information
         output << "Pytorch GPU information: current reserve  - " << format_size(frameworkInfo.curReserve) << ". Peak reserve - " << format_size(frameworkInfo.peakReserve) << std::endl;

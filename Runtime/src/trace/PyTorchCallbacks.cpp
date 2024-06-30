@@ -10,6 +10,8 @@
 namespace mlinsight {
     //Check Pytorch/test/nn/test_modulehooks.py
 
+    ssize_t stepCounter=-1;//Training step counter
+
     std::set<PyObject* > moduleSet; // A set used to find the root module
     PyObject* rootModule=nullptr;
     PyObject *forward_pre_hook(PyObject * self, PyObject * args) {
@@ -26,24 +28,23 @@ namespace mlinsight {
         }
         
         if(module==rootModule){
-            perfettoAnalyzer.onStepFinished();
+            perfettoAnalyzer.onStepFinished(stepCounter);
+            ++stepCounter;
         }
 
+        auto findRet = hookInstallerInstance->pytorchModuleIdMap.find(module);
+        if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
+            FileID layerId = (*findRet).second;
+            globalExecutionState.pyTorchModuleStack.emplace_back(layerId, MLExecutionState::FORWARD_STATE, module);
+            perfettoAnalyzer.onPreLayerForward(layerId, globalExecutionState.pyTorchModuleStack.back());
+        }else{
+            //ERR_LOG("Encountered not registered module: ");
+            //PyObject_Print(module,logFileStd,NULL);
+        }
 
 //        INFO_LOGS("[MLInsight ForwardPreHook: %s\n",);
 //        PyObject_Print(module,logFileStd,NULL);
 //        OUTPUT("]\n");
-
-        auto findRet = hookInstallerInstance->pytorchModuleIdMap.find(module);
-        if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
-            FileID moduleId = (*findRet).second;
-            globalExecutionState.pyTorchModuleStack.emplace_back(moduleId, PyTorchModuleState::FORWARD_STATE);
-            INFO_LOGS("===[Pytorch Module] %s forward Start",
-                      hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
-            //todo: Low performance, chache strings
-            MLINSIGHT_TRACE_EVENT_BEGIN("forward",perfetto::DynamicString(hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str()), "ModuleID",moduleId);
-        }
-
         return returnPyNone();
     }
 
@@ -67,19 +68,12 @@ namespace mlinsight {
         auto findRet = hookInstallerInstance->pytorchModuleIdMap.find(module);
         if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
             FileID moduleId = (*findRet).second;
-            assert(globalExecutionState.pyTorchModuleStack.back().pyTorchModuleId == moduleId);
-            assert(globalExecutionState.pyTorchModuleStack.back().pyTorchModuleExecutionState ==
-                   PyTorchModuleState::FORWARD_STATE);
+            assert(globalExecutionState.pyTorchModuleStack.back().mlExecutionState ==
+                   MLExecutionState::FORWARD_STATE);
+            perfettoAnalyzer.onPostLayerForward(moduleId, globalExecutionState.pyTorchModuleStack.back());
             globalExecutionState.pyTorchModuleStack.pop_back();
-            INFO_LOGS("===[Pytorch Module] %s forward End",
-                      hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
-            MLINSIGHT_TRACE_EVENT_END("forward");
-            if (291 <= moduleId && moduleId <= 314) {
-                //todo: Hardcoded
-//                pthread_rwlock_wrlock(&torchMem.rwLock);
-                //pyMemoryFlameTreeByPyPackage.snapshot(ExecutionState(moduleId, PyTorchModuleState::FORWARD_STATE));
-//                pthread_rwlock_unlock(&torchMem.rwLock);
-            }
+            //INFO_LOGS("===[Pytorch Module] %s forward End",
+            //          hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
         }
 
         return returnPyNone();
@@ -98,14 +92,11 @@ namespace mlinsight {
         auto findRet = hookInstallerInstance->pytorchModuleIdMap.find(module);
         if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
             FileID moduleId = (*findRet).second;
-            globalExecutionState.pyTorchModuleStack.emplace_back(moduleId, PyTorchModuleState::BACKWARD_STATE);
-            //fatalErrorS("===[Pytorch Module] %s backward Start",
-            //          hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
-            //INFO_LOGS("===[Pytorch Module] %s backward Start",
-            //          hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
-            MLINSIGHT_TRACE_EVENT_BEGIN("backward", perfetto::DynamicString(hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str()),"ModuleID",moduleId);
-        } else {
-//            INFO_LOGS("forward_pre_hook invoked on non-initialized object %p", module);
+            globalExecutionState.pyTorchModuleStack.emplace_back(moduleId, MLExecutionState::BACKWARD_STATE, module);
+            perfettoAnalyzer.onPreLayerBackward(moduleId, globalExecutionState.pyTorchModuleStack.back());
+        } else{
+            //ERR_LOG("Encountered not registered module: ");
+            //PyObject_Print(module,logFileStd,NULL);
         }
 
         return returnPyNone();
@@ -127,25 +118,16 @@ namespace mlinsight {
         //INFO_LOG("ForwardPreHook");
 
         auto findRet = hookInstallerInstance->pytorchModuleIdMap.find(module);
-
         if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
             FileID moduleId = (*findRet).second;
-
-            assert(globalExecutionState.pyTorchModuleStack.back().pyTorchModuleId == moduleId);
-            assert(globalExecutionState.pyTorchModuleStack.back().pyTorchModuleExecutionState ==
-                   PyTorchModuleState::BACKWARD_STATE);
+            
+            assert(globalExecutionState.pyTorchModuleStack.back().layerId == moduleId);
+            assert(globalExecutionState.pyTorchModuleStack.back().mlExecutionState ==
+                   MLExecutionState::BACKWARD_STATE);
+            perfettoAnalyzer.onPostLayerBackward(moduleId, globalExecutionState.pyTorchModuleStack.back());
             globalExecutionState.pyTorchModuleStack.pop_back();
             //INFO_LOGS("===[Pytorch Module] %s backward End",
             //          hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
-            MLINSIGHT_TRACE_EVENT_END("backward");
-
-            if (291 <= moduleId && moduleId <= 314) {
-                //todo: Hardcoded
-//                pthread_rwlock_wrlock(&torchMem.rwLock);
-                //pyMemoryFlameTreeByPyPackage.snapshot(ExecutionState(moduleId, PyTorchModuleState::BACKWARD_STATE));
-//                pthread_rwlock_unlock(&torchMem.rwLock);
-
-            }
         }
         return returnPyNone();
     }

@@ -103,8 +103,8 @@ namespace mlinsight {
         try{
         data_ptr = realAllocator->allocate(n);
         }catch(const c10::Error& e){
-            memLeakAnalyzer.onOutOfMemory(n);
-            perfettoAnalyzer.onOutOfMemory(n);
+            memLeakAnalyzer.onOutOfMemoryFramework(n);
+            perfettoAnalyzer.onOutOfMemoryFramework(n);
             pthread_mutex_unlock(&analyzerLock);
             exit(-1);//todo: rethrow e will cause an error. It is possibly a Pytorch problem? So we currently directly call exit
         }
