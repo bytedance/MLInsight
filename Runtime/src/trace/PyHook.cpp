@@ -246,7 +246,6 @@ namespace mlinsight {
 
             retPyCodeExtra->pythonSourceFileName = PyUnicode_AsUTF8(f->f_code->co_filename);
             retPyCodeExtra->pythonFunctionName = PyUnicode_AsUTF8(f->f_code->co_name);
-            retPyCodeExtra->pythonSourceFileLineNumber=PyFrame_GetLineNumber(f);
 
             //Allocate pyModuleId
             std::string pyModuleName = getPyModuleName(f);

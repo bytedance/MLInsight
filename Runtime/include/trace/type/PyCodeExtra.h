@@ -25,7 +25,6 @@ namespace mlinsight {
             FileID globalPyModuleId = 0; // Actually equals to calleeFileId in the current implementation. Which means, the timing module will time based on the Python package.
             FileID globalPySrcFileId = 0; // The fileId for python source code file.
             ssize_t pyFrameExtraID=-1; //Map python callstack FrameExtra to an id
-            ssize_t pythonSourceFileLineNumber;
             std::string pythonSourceFileName;
             std::string pythonFunctionName;
             FUNCTIONAL_MARKER functionalMarker;
@@ -48,10 +47,11 @@ namespace mlinsight {
         class IntegerFrameKey : public callstack::FrameKey<ssize_t,FrameExtra>
         {
         public:
+            ssize_t pythonSourceFileLineNumber;
             
             // The version of elem. If library is unloaded, then the address maybe reused. So one address may corresponds to multiple FrameKey-FrameExtra pairs.
             IntegerFrameKey() = default;
-            inline IntegerFrameKey(ssize_t frameExtraID, FrameExtra *extra) : callstack::FrameKey<ssize_t,FrameExtra>(frameExtraID,extra)
+            inline IntegerFrameKey(ssize_t frameExtraID, FrameExtra *extra, ssize_t lineNumber) : callstack::FrameKey<ssize_t,FrameExtra>(frameExtraID,extra), pythonSourceFileLineNumber(lineNumber)
             {
             }
 

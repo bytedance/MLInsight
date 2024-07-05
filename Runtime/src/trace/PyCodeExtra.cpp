@@ -16,18 +16,14 @@ namespace mlinsight
     std::string PythonFrameExtra_t::toString(){
 
         if(this->toStringCache.length()==0){
-            char retString[4096];
-            snprintf(retString,sizeof(retString)/sizeof(char), "%s:%zd",
-                            this->pythonSourceFileName.c_str(),
-                            this->pythonSourceFileLineNumber);
-            toStringCache =std::string(retString);
+            toStringCache =this->pythonSourceFileName;
         }
 
         return toStringCache;
     }
 
     void PythonFrameExtra_t::print(std::ostream &os){
-        os<<this->toString()<<std::endl;
+        os<<this->toString();
     }
 
     std::string PyCallStack::toString(){
@@ -38,6 +34,7 @@ namespace mlinsight
                 for (int i = 0; i < this->array.size(); i++)
                 {  
                     this->array[i].extra->print(ss);
+                    ss<<":"<<this->array[i].pythonSourceFileLineNumber<<std::endl;
                 }
                 this->strCache=ss.str();
             }else{
@@ -64,7 +61,7 @@ namespace mlinsight
         while(currentFrame != NULL){
             // Cache the name and line number of current python frame
             PythonFrameExtra_t *codeExtraPtr = getPyCodeExtra(currentFrame);
-            this->array.emplace_back(codeExtraPtr->pyFrameExtraID,codeExtraPtr); //Uses globalPyCodeExtraIdCounter to reduce the conflict iin
+            this->array.emplace_back(codeExtraPtr->pyFrameExtraID,codeExtraPtr,PyFrame_GetLineNumber(currentFrame)); //Uses globalPyCodeExtraIdCounter to reduce the conflict iin
             // Go to next frame
             currentFrame = currentFrame->f_back;
         }
