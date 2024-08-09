@@ -537,7 +537,7 @@ PyObject *evalFrameFuncGeneral(PYFRAME_T curFrame, FRAME_EVAL_Args... args) {
             //todo: When previousFrame is not NULL, reading module name from f->globals will cause error.
             //Try to install PyTorch
             //todo: There are issues in registerPyTorchHook when testing with ColossalAI
-            registerPyTorchHook();
+        registerPyTorchHook();
         }
 
     } else {

@@ -18,7 +18,7 @@ namespace mlinsight {
     std::atomic<ssize_t> logPid = -1;
     pthread_mutex_t logInitializationLock = PTHREAD_MUTEX_INITIALIZER;
     bool pythonIsAvailable = false;
-    bool DEBUGGER_CONTINUE = false;
+    bool DEBUGGER_LOADER_CONTINUE = false;
 
 
     void checkLogFolder() {

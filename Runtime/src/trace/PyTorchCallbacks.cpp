@@ -13,7 +13,7 @@ namespace mlinsight {
     ssize_t stepCounter=-1;//Training step counter
 
     std::set<PyObject* > moduleSet; // A set used to find the root module
-    PyObject* rootModule=nullptr;
+    //PyObject* rootModule=nullptr;
     PyObject *forward_pre_hook(PyObject * self, PyObject * args) {
         PyObject * module = nullptr;
         PyObject * input = nullptr;
@@ -22,12 +22,11 @@ namespace mlinsight {
         }
 
         // todo: Move the following code to perfetto analyzer
-        if(!rootModule){
-            assert(moduleSet.size()==1);
-            rootModule=*moduleSet.begin();
-        }
-        
-        if(module==rootModule){
+        Py_BEGIN_ALLOW_THREADS
+
+        pthread_mutex_lock(&analyzerLock);
+
+        if(moduleSet.find(module)!=moduleSet.end()){
             perfettoAnalyzer.onStepFinished(stepCounter);
             ++stepCounter;
         }
@@ -41,6 +40,9 @@ namespace mlinsight {
             //ERR_LOG("Encountered not registered module: ");
             //PyObject_Print(module,logFileStd,NULL);
         }
+        pthread_mutex_unlock(&analyzerLock);
+
+        Py_END_ALLOW_THREADS 
 
 //        INFO_LOGS("[MLInsight ForwardPreHook: %s\n",);
 //        PyObject_Print(module,logFileStd,NULL);
@@ -58,6 +60,10 @@ namespace mlinsight {
         if (!PyArg_ParseTuple(args, "OOO", &module, &input, &output)) {
             fatalError("MLInsight failed to parse Python arguments. Has the pytorch API interface changed?");
         }
+
+        Py_BEGIN_ALLOW_THREADS
+
+        pthread_mutex_lock(&analyzerLock);
 //        OUTPUT("argPrint:")
 //        PyObject_Print(args,logFileStd,NULL);
 //        OUTPUT("\n")
@@ -75,7 +81,9 @@ namespace mlinsight {
             //INFO_LOGS("===[Pytorch Module] %s forward End",
             //          hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
         }
+        pthread_mutex_unlock(&analyzerLock);
 
+        Py_END_ALLOW_THREADS 
         return returnPyNone();
     }
 
@@ -88,7 +96,9 @@ namespace mlinsight {
 //        assert(hookInstallerInstance->pytorchModuleIdMap.find(module)!=hookInstallerInstance->pytorchModuleIdMap.end());
 //        FileID moduleId = hookInstallerInstance->pytorchModuleIdMap[module];
 //        INFO_LOGS("Pytorch Module %s backward Start", hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
-
+        Py_BEGIN_ALLOW_THREADS
+        
+        pthread_mutex_lock(&analyzerLock);
         auto findRet = hookInstallerInstance->pytorchModuleIdMap.find(module);
         if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
             FileID moduleId = (*findRet).second;
@@ -98,7 +108,9 @@ namespace mlinsight {
             //ERR_LOG("Encountered not registered module: ");
             //PyObject_Print(module,logFileStd,NULL);
         }
+        pthread_mutex_unlock(&analyzerLock);
 
+        Py_END_ALLOW_THREADS        
         return returnPyNone();
     }
 
@@ -112,6 +124,9 @@ namespace mlinsight {
             fatalError("MLInsight failed to parse Python arguments. Has the pytorch API interface changed?");
         }
 
+        Py_BEGIN_ALLOW_THREADS
+
+        pthread_mutex_lock(&analyzerLock);
 //        assert(hookInstallerInstance->pytorchModuleIdMap.find(module)!=hookInstallerInstance->pytorchModuleIdMap.end());
 //        FileID moduleId = hookInstallerInstance->pytorchModuleIdMap[module];
 //        INFO_LOGS("Pytorch Module %s backward End", hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
@@ -121,14 +136,20 @@ namespace mlinsight {
         if (findRet != hookInstallerInstance->pytorchModuleIdMap.end()) {
             FileID moduleId = (*findRet).second;
             
-            assert(globalExecutionState.pyTorchModuleStack.back().layerId == moduleId);
-            assert(globalExecutionState.pyTorchModuleStack.back().mlExecutionState ==
-                   MLExecutionState::BACKWARD_STATE);
+            //assert(globalExecutionState.pyTorchModuleStack.back().layerId == moduleId);
+            //assert(globalExecutionState.pyTorchModuleStack.back().mlExecutionState ==
+            //       MLExecutionState::BACKWARD_STATE);
             perfettoAnalyzer.onPostLayerBackward(moduleId, globalExecutionState.pyTorchModuleStack.back());
             globalExecutionState.pyTorchModuleStack.pop_back();
             //INFO_LOGS("===[Pytorch Module] %s backward End",
             //          hookInstallerInstance->pytorchModuleInfoMap[moduleId].moduleName.c_str());
         }
+
+        //ERR_LOGS("pthread_mutex_unlock %p",pthread_self());
+        pthread_mutex_unlock(&analyzerLock);
+        
+        Py_END_ALLOW_THREADS 
+
         return returnPyNone();
     }
 
@@ -140,6 +161,7 @@ namespace mlinsight {
         if (!PyArg_ParseTuple(args, "OOO", &module, &name, &submodule)) {
             fatalError("MLInsight failed to parse Python arguments. Has the pytorch API interface changed?");
         }
+        pthread_mutex_lock(&analyzerLock);
         //INFO_LOG("ForwardPreHook");
         const char *pyTorchModuleName = PyUnicode_AsUTF8(name);
         INFO_LOGS("PyTorch Module Registration: %p %s moduleId=%zd", module, pyTorchModuleName,
@@ -163,6 +185,7 @@ namespace mlinsight {
             hookInstallerInstance->pytorchModuleIdMap[submodule] = hookInstallerInstance->pytorchModuleInfoMap.getSize();
             hookInstallerInstance->pytorchModuleInfoMap.pushBack(pyTorchModuleName);
         }
+        pthread_mutex_unlock(&analyzerLock);
         return returnPyNone();
     }
 
@@ -175,9 +198,12 @@ namespace mlinsight {
         if (!PyArg_ParseTuple(args, "OOO", &module, &name, &parm)) {
             fatalError("MLInsight failed to parse Python arguments. Has the pytorch API interface changed?");
         }
+
+        pthread_mutex_lock(&analyzerLock);
         const char *pyTorchParameterName = PyUnicode_AsUTF8(name);
         INFO_LOGS("PyTorch Parameter Registration: %s", pyTorchParameterName);
         //INFO_LOG("ForwardPreHook");
+        pthread_mutex_unlock(&analyzerLock);
         return returnPyNone();
     }
 }

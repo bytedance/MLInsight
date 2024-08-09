@@ -80,16 +80,11 @@ namespace mlinsight {
     c10::DeleterFnPtr realDeleter = nullptr;
 
     static void deleter_proxy(void *ptr) {
+        pthread_mutex_lock(&analyzerLock);
         assert(realDeleter != nullptr);
         FramekworkTensorType *justRemovedTensor = mapFrameworkAliveObjs.remove(ptr);
-        
-        pthread_mutex_lock(&analyzerLock);
         eventDispatcher.onPreFree(ptr,justRemovedTensor);
-        pthread_mutex_unlock(&analyzerLock);
-        
         realDeleter(ptr);
-
-        pthread_mutex_lock(&analyzerLock);
         eventDispatcher.onPostFree(ptr,justRemovedTensor);
         pthread_mutex_unlock(&analyzerLock);
 
@@ -116,17 +111,15 @@ namespace mlinsight {
             newTensor->updateCallstack();
         }
         eventDispatcher.onPostAlloc(static_cast<ssize_t>(n), ptr, newTensor);
-        pthread_mutex_unlock(&analyzerLock);
-
-
-        if (n == 0 || data_ptr.get() == NULL)
+        
+        if (n == 0 || data_ptr.get() == NULL){
+            pthread_mutex_unlock(&analyzerLock);
             return data_ptr;
+        }
 
         realDeleter = data_ptr.get_deleter();
         // Switch the deleter so that we could interce the deleter function.
         bool success = data_ptr.compare_exchange_deleter(realDeleter, (c10::DeleterFnPtr) &deleter_proxy);
-
-        pthread_mutex_lock(&analyzerLock);
         const_cast<Pytorch2AllocatorProxy*>(this)->realRawDeleterMap[ptr]=(void*)realDeleter;
         if (!success) {
             fatalError("Failed to hook Pytorch deleter because pointer exchange failed. This should not happen");
@@ -143,6 +136,7 @@ namespace mlinsight {
             if (!ptr.get()) {
                 pthread_mutex_unlock(&analyzerLock);
                 realAllocator->recordStream(ptr, stream);
+                pthread_mutex_unlock(&analyzerLock);
                 return;
             }
 

@@ -77,11 +77,8 @@ namespace mlinsight {
 
         memLeakAnalyzer.onPreAllocDriver(bytesize);
         perfettoAnalyzer.onPreAllocDriver(bytesize); //Perfetto analyzer must be called after its dependencies analyzers
-        pthread_mutex_unlock(&analyzerLock);
 
         CUresult ret = cuMemAlloc(dptr, bytesize);
-
-        pthread_mutex_lock(&analyzerLock);
 
         INFO_LOGS("cuMemAlloc_proxy(%p,%zd)",(void*)*dptr,bytesize);
 
@@ -144,26 +141,21 @@ namespace mlinsight {
 #if USE_PERFETTO
             perfettoAnalyzer.onPreFreeDriver(ptr,justRemovedTensor); //Perfetto analyzer must be called after its dependencies analyzers
 #endif
-            pthread_mutex_unlock(&analyzerLock);
             
 
             ret = cuMemFree(dptr);
             
-            pthread_mutex_lock(&analyzerLock);
 
             memLeakAnalyzer.onPostFreeDriver(ptr,justRemovedTensor);
 #if USE_PERFETTO
             perfettoAnalyzer.onPostFreeDriver(ptr,justRemovedTensor); //Perfetto analyzer must be called after its dependencies analyzers
 #endif
-            pthread_mutex_unlock(&analyzerLock);
         }else{
-            pthread_mutex_unlock(&analyzerLock);
             //Still call CUDA even if the pointer is null
             ret = cuMemFree(dptr);
         }
 
 #ifndef NDEBUG
-        pthread_mutex_lock(&analyzerLock);
         if (cuptiCrossChecker.cuptiCrossCheckingEnabled) {
 
             if (cuptiCrossChecker.cuMemFreeMlInsightPtr != cuptiCrossChecker.cuMemFreeCuptiPtr) {
@@ -173,9 +165,9 @@ namespace mlinsight {
             }
             cuptiCrossChecker.insideMLInsightCuMemFreeProxy=false;
         }
-        pthread_mutex_unlock(&analyzerLock);
 #endif
 
+        pthread_mutex_unlock(&analyzerLock);
         return ret;
     }
 

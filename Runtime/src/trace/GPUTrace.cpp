@@ -298,8 +298,12 @@ namespace mlinsight {
         }
 
         if (cbid == CUPTI_DRIVER_TRACE_CBID_cuMemAlloc_v2 || cbid == CUPTI_DRIVER_TRACE_CBID_cuMemAlloc) {
+            pthread_mutex_lock(&analyzerLock);
 #ifndef NDEBUG
             if (cuptiCrossChecker.cuptiCrossCheckingEnabled) {
+                if(!cuptiCrossChecker.insideMLInsightCuMemAllocProxy){
+                    fatalError("MLInsight did not hook this cuMemAlloc");
+                }
                 assert(cuptiCrossChecker.insideMLInsightCuMemAllocProxy);
             }
 
@@ -312,9 +316,11 @@ namespace mlinsight {
                     cuptiCrossChecker.cuMemAllocCUPTISize += params->bytesize;
                 }
             }
+            pthread_mutex_unlock(&analyzerLock);
 #endif
         } else if (cbid == CUPTI_DRIVER_TRACE_CBID_cuMemFree_v2 || cbid == CUPTI_DRIVER_TRACE_CBID_cuMemFree) {
 #ifndef NDEBUG
+            pthread_mutex_lock(&analyzerLock);
             if (cuptiCrossChecker.cuptiCrossCheckingEnabled) {
                 assert(cuptiCrossChecker.insideMLInsightCuMemFreeProxy);
             }
@@ -327,6 +333,7 @@ namespace mlinsight {
                 //}
 
             }
+            pthread_mutex_unlock(&analyzerLock);
 #endif
 
         }

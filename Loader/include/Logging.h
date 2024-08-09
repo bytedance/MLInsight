@@ -115,7 +115,7 @@ namespace mlinsight {
  * If SAVE_LOG_TO_FILE is defined, then logs are also saved to disk. The root log folder is printed at the end of the program main process.
  * Uses can use PRINT_XXX_LOG macros to turn specific types of debug logs on or off. But OUTPUTS and fatalErrors cannot be turned off.
  */
-extern bool DEBUGGER_CONTINUE;
+extern bool DEBUGGER_LOADER_CONTINUE;
 #if PRINT_DBG_LOG
 
 #if SAVE_LOG_TO_FILE
@@ -237,8 +237,8 @@ extern bool DEBUGGER_CONTINUE;
 #endif
 
 //fatalError represents a program crash. So we can safely print it out to the screen for the ease of debugging.
-#define fatalError(errMsg) {fprintf(stderr,"Fatal ERR: %s:%d  ",__FILE__,__LINE__); fprintf(stderr,"%s\n",errMsg); fprintf(stderr,"Waiting for debugger at tid=%zd pid=%d\n",pthread_self(),getpid());  fflush(logFileStd); while(!DEBUGGER_CONTINUE){ usleep(2000); } exit(-1);}
-#define fatalErrorS(errFmt, ...) {fprintf(stderr,"Fatal ERR: %s:%d  ",__FILE__,__LINE__);  fprintf(stderr,errFmt,__VA_ARGS__); fprintf(stderr,"\n"); fprintf(stderr,"Waiting for debugger at tid=%zd pid=%d\n",pthread_self(),getpid()); fflush(logFileStd); while(!DEBUGGER_CONTINUE){ usleep(2000); }   exit(-1);}
+#define fatalError(errMsg) {fprintf(stderr,"Fatal ERR: %s:%d  ",__FILE__,__LINE__); fprintf(stderr,"%s\n",errMsg); fprintf(stderr,"Waiting for debugger at tid=%zd pid=%d\n",pthread_self(),getpid());  fflush(logFileStd); while(!DEBUGGER_LOADER_CONTINUE){ usleep(2000); } exit(-1);}
+#define fatalErrorS(errFmt, ...) {fprintf(stderr,"Fatal ERR: %s:%d  ",__FILE__,__LINE__);  fprintf(stderr,errFmt,__VA_ARGS__); fprintf(stderr,"\n"); fprintf(stderr,"Waiting for debugger at tid=%zd pid=%d\n",pthread_self(),getpid()); fflush(logFileStd); while(!DEBUGGER_LOADER_CONTINUE){ usleep(2000); }   exit(-1);}
 
 }
 #endif //MLINSIGHT_FILETOOL_H

@@ -235,7 +235,7 @@ namespace mlinsight {
 
                 assert(object != nullptr);
                 objectsNum++;
-
+                assert(object->callstack!=nullptr);
                 callstackNumberCalculator.emplace(object->callstack->callstackID);
 
                 for(ssize_t i=infoByCallStackArray.size();i<object->callstack->callstackID+1;++i){

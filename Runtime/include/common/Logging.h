@@ -9,7 +9,7 @@
 #include <atomic>
 #include <unistd.h>
 #include "common/Config.h"
-
+#include <pthread.h>
 namespace mlinsight {
 
 //Note that all configurations should be listed in "common/Config.h"

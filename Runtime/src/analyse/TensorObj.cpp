@@ -25,7 +25,8 @@ namespace mlinsight {
             this->callstack=insertionIter->first;
             this->callstack->isNewCallStackId=false;
         }
-
+        assert(this->callstack);
+        //ERR_LOGS("Obj %p updated callstack this->callstack=%p", this, this->callstack);
     }
 
     FrameworkTensorMixin::FrameworkTensorMixin(ssize_t size, void *ptr) : TensorCallstackMixin(size, ptr) {
@@ -51,6 +52,7 @@ namespace mlinsight {
             this->callstack=insertionIter->first;
             this->callstack->isNewCallStackId=false;
         }
+        assert(this->callstack);
     }
 
     DriverTensorMixin::DriverTensorMixin(ssize_t size, void *ptr) : TensorCallstackMixin(size, ptr) {
